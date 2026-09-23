@@ -46,10 +46,24 @@ body.auto #bar.show ~ #peek, body.auto #bar.pinned ~ #peek { opacity:0; }
                border-radius:4px; padding:2px 8px; cursor:pointer; font:inherit; }
 #hits { color:var(--dim); }
 
-#row { flex:1 1 auto; display:flex; min-height:0; }
+#row { flex:1 1 auto; display:flex; min-height:0; position:relative; }
 #side { width:var(--side-w); flex:0 0 auto; background:var(--panel); display:flex;
         flex-direction:column; border-right:1px solid var(--rule); min-width:0; }
 #side.hidden { display:none; }
+/* Same idea as the bar: out of the way until the mouse reaches the edge. */
+#sidehot { position:absolute; top:0; bottom:0; left:0; width:10px; z-index:5; }
+body.autoside #side { position:absolute; top:0; bottom:0; left:0; z-index:6;
+        transform:translateX(-100%); transition:transform .14s ease; }
+body.autoside #side.show, body.autoside #side.pinned { transform:none; }
+body.autoside #grip { display:none; }
+body.autoside #side.show #grip, body.autoside #side.pinned #grip { display:block; }
+/* Drag to resize. */
+#grip { position:absolute; top:0; right:-3px; width:6px; height:100%; cursor:col-resize;
+        z-index:7; }
+#grip:hover, #grip.dragging { background:var(--accent); opacity:.5; }
+#sidepin { background:none; border:0; color:var(--dim); cursor:pointer; padding:0 7px;
+        font:inherit; }
+#sidepin.on { color:var(--accent); }
 #tabs { display:flex; border-bottom:1px solid var(--rule); }
 #tabs button { flex:1 1 0; background:transparent; color:var(--dim); border:0;
                border-bottom:2px solid transparent; padding:6px 4px; cursor:pointer;
@@ -100,20 +114,46 @@ article pre:hover .copy { opacity:1; }
       font-size:var(--ui-size); white-space:pre-wrap; }
 #fm.show { display:block; }
 
-#options { display:none; position:absolute; inset:0; background:rgba(0,0,0,.45); }
-#options.show { display:flex; align-items:flex-start; justify-content:center; }
-#panel { background:var(--panel); border:1px solid var(--rule); border-radius:8px;
-         margin-top:40px; width:640px; max-height:80%; overflow:auto; padding:16px 18px; }
-#panel h2 { margin:0 0 12px; font-size:16px; }
-.set { display:flex; align-items:center; gap:8px; padding:5px 0;
-       border-bottom:1px solid var(--rule); }
-.set label { flex:0 0 190px; color:var(--dim); }
-.set input, .set select { flex:1 1 auto; background:var(--bg); color:var(--fg);
-       border:1px solid var(--rule); border-radius:4px; padding:3px 7px; font:inherit; }
-.set .def { flex:0 0 auto; color:var(--dim); font-size:11px; }
-.set button { background:transparent; color:var(--fg); border:1px solid var(--rule);
-       border-radius:4px; padding:2px 8px; cursor:pointer; font:inherit; }
-#panel .foot { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+#options { display:none; position:absolute; inset:0; background:rgba(0,0,0,.45); z-index:30; }
+#options.show { display:flex; align-items:center; justify-content:center; }
+#panel { width:720px; height:440px; background:var(--bg); border:1px solid var(--rule);
+         border-radius:12px; display:flex; flex-direction:column; overflow:hidden; }
+#phead { display:flex; align-items:center; gap:10px; padding:11px 15px;
+         border-bottom:1px solid var(--rule); background:var(--panel); }
+#phead h2 { margin:0; font-size:15px; font-weight:600; }
+#search { flex:1; background:var(--bg); border:1px solid var(--rule); color:var(--fg);
+          border-radius:6px; padding:5px 10px; font:inherit; }
+#pbody { flex:1; display:flex; min-height:0; }
+#rail { width:160px; flex:0 0 auto; background:var(--panel);
+        border-right:1px solid var(--rule); padding:8px 6px; }
+#rail button { display:block; width:100%; text-align:left; background:none; border:0;
+        color:var(--dim); padding:7px 10px; border-radius:6px; cursor:pointer; font:inherit; }
+#rail button:hover { background:var(--bg); color:var(--fg); }
+#rail button.on { background:var(--bg); color:var(--fg); box-shadow:inset 2px 0 0 var(--accent); }
+#sets { flex:1; padding:12px 16px; overflow:auto; }
+.grp h4 { margin:0 0 6px; font-size:11px; letter-spacing:.8px; text-transform:uppercase;
+        color:var(--dim); font-weight:600; }
+.set { display:grid; grid-template-columns:1fr 210px 24px; align-items:center; gap:12px;
+        padding:7px 0; border-bottom:1px solid var(--rule); }
+.set .lab { font-size:13px; }
+.set .sub { display:block; color:var(--dim); font-size:11px; margin-top:1px; }
+.set input, .set select { width:100%; background:var(--panel); color:var(--fg);
+        border:1px solid var(--rule); border-radius:6px; padding:4px 8px; font:inherit; }
+.set input[type=checkbox] { width:auto; }
+.set .rst { background:none; border:0; color:var(--dim); cursor:pointer; opacity:0;
+        font-size:14px; border-radius:4px; }
+.set:hover .rst { opacity:1; }
+.set .rst:hover { color:var(--accent); }
+.sw { display:flex; gap:5px; flex-wrap:wrap; }
+.sw button { width:28px; height:20px; border-radius:5px; border:1px solid var(--rule);
+        cursor:pointer; padding:0; }
+.sw button.on { outline:2px solid var(--accent); outline-offset:1px; }
+#pfoot { display:flex; align-items:center; gap:10px; padding:9px 15px;
+        border-top:1px solid var(--rule); background:var(--panel); }
+#pfoot .grow { flex:1; color:var(--dim); font-size:12px; }
+#pfoot button { background:var(--bg); border:1px solid var(--rule); color:var(--fg);
+        border-radius:6px; padding:4px 14px; cursor:pointer; font:inherit; }
+#pfoot button.pri { border-color:var(--accent); color:var(--accent); }
 #warn { color:#e5c07b; padding:6px 0; }
 </style></head><body>
 
@@ -146,11 +186,14 @@ article pre:hover .copy { opacity:1; }
 </div>
 
 <div id="row">
+  <div id="sidehot"></div>
   <nav id="side">
+    <div id="grip" title="Drag to resize"></div>
     <div id="tabs">
       <button data-pane="files" class="on">Files</button>
       <button data-pane="outline">Outline</button>
       <button data-pane="recent">Recent</button>
+      <button id="sidepin" title="Keep the pane open">&#9679;</button>
     </div>
     <div id="pane-files" class="pane on"></div>
     <div id="pane-outline" class="pane"></div>
@@ -164,12 +207,12 @@ article pre:hover .copy { opacity:1; }
 </div>
 
 <div id="options"><div id="panel">
-  <h2>Options</h2>
-  <div id="warn"></div>
-  <div id="sets"></div>
-  <div class="foot">
-    <button id="opt-reset">Reset everything</button>
-    <button id="opt-close">Close</button>
+  <div id="phead"><h2>Options</h2><input id="search" placeholder="Search settings"></div>
+  <div id="pbody"><div id="rail"></div><div id="sets"></div></div>
+  <div id="pfoot">
+    <span class="grow" id="pnote">Changes apply as you make them.</span>
+    <button id="opt-reset">Reset all</button>
+    <button class="pri" id="opt-close">Done</button>
   </div>
 </div></div>
 
@@ -177,6 +220,22 @@ article pre:hover .copy { opacity:1; }
 const $ = id => document.getElementById(id);
 const send = o => window.ipc.postMessage(JSON.stringify(o));
 let state = { settings:{}, defaults:{}, themes:[], fonts:[], path:"", dirty:false, editing:false };
+// Grouped so each screen is short. Remembered state - window size, last file,
+// scroll position - is not a setting and is deliberately not listed.
+const GROUPS = {
+  Appearance: ["theme", "chrome", "sidebar", "zoom"],
+  Fonts: ["ui_font", "body_font", "code_font", "ui_size", "body_size",
+          "code_size", "line_height", "ligatures"],
+  Document: ["view_mode", "syntax_colour", "highlight_limit_kb",
+             "plain_text_above_mb", "restore_last_file"],
+};
+const CHOICES = {
+  view_mode: ["rendered", "source"],
+  chrome: ["auto", "always"],
+  sidebar: ["auto", "always", "off"],
+  sidebar_tab: ["files", "outline", "recent"],
+};
+let activeGroup = "Appearance";
 
 const app = {
   init(s) {
@@ -193,6 +252,7 @@ const app = {
     app.applySettings(s.settings);
     if (s.missingFonts && s.missingFonts.length)
       app.note("font not on this machine: " + s.missingFonts.join(", "));
+    if ($("options").classList.contains("show")) app.drawOptions();
   },
   applyTheme(t) {
     const r = document.documentElement.style;
@@ -213,8 +273,11 @@ const app = {
     r.setProperty("--side-w", s.sidebar_width + "px");
     r.setProperty("--zoom", s.zoom);
     document.body.style.fontVariantLigatures = s.ligatures ? "normal" : "none";
-    $("side").classList.toggle("hidden", !s.sidebar_visible);
-    $("b-side").classList.toggle("on", s.sidebar_visible);
+    $("side").classList.toggle("hidden", s.sidebar === "off");
+    document.body.classList.toggle("autoside", s.sidebar === "auto");
+    $("side").classList.toggle("pinned", s.sidebar === "always");
+    $("sidepin").classList.toggle("on", s.sidebar === "always");
+    $("b-side").classList.toggle("on", s.sidebar !== "off");
     $("b-theme").value = s.theme;
     document.body.classList.toggle("auto", s.chrome === "auto");
     $("b-view").textContent = s.view_mode === "source" ? "Rendered" : "Text";
@@ -326,53 +389,119 @@ const app = {
   },
   options(open) {
     $("options").classList.toggle("show", open);
-    if (open) app.buildOptions();
+    if (open) { $("search").value = ""; app.buildOptions(); }
   },
   buildOptions() {
-    const box = $("sets"); box.innerHTML = "";
-    const fontOptions = kind => {
-      const list = state.fonts.filter(f => kind === "any" ? true : f.monospace);
-      return list.map(f => `<option value="${f.name}"${f.nerd ? ' data-nerd="1"' : ''}>${f.name}${f.nerd ? "  (patched)" : ""}</option>`).join("");
-    };
-    for (const [key, value] of Object.entries(state.settings)) {
-      if (key === "recents" || key === "last_path" || key === "last_scroll") continue;
-      const row = document.createElement("div"); row.className = "set";
-      const def = state.defaults[key];
-      let field;
-      if (key === "theme") {
-        field = `<select data-k="${key}">${state.themes.map(t => `<option value="${t.id}">${t.name}</option>`).join("")}</select>`;
-      } else if (key.endsWith("_font")) {
-        const mono = key === "code_font";
-        field = `<select data-k="${key}"><option value="${value}">${value} (current)</option>${fontOptions(mono ? "mono" : "any")}</select>`;
-      } else if (key === "view_mode" || key === "chrome" || key === "sidebar_tab") {
-        const choices = key === "view_mode" ? ["rendered","source"]
-                      : key === "chrome" ? ["auto","always"]
-                      : ["files","outline","recent"];
-        field = `<select data-k="${key}">${choices.map(c => `<option value="${c}"${c===value?" selected":""}>${c}</option>`).join("")}</select>`;
-      } else if (typeof value === "boolean") {
-        field = `<input type="checkbox" data-k="${key}"${value ? " checked" : ""}>`;
-      } else if (typeof value === "number") {
-        field = `<input type="number" step="${Number.isInteger(value) ? 1 : 0.05}" data-k="${key}" value="${value}">`;
-      } else {
-        field = `<input type="text" data-k="${key}" value="${String(value).replace(/"/g, "&quot;")}">`;
+    const rail = $("rail");
+    if (!rail.dataset.built) {
+      for (const group of Object.keys(GROUPS)) {
+        const b = document.createElement("button");
+        b.textContent = group;
+        b.onclick = () => { activeGroup = group; app.drawOptions(); };
+        rail.appendChild(b);
       }
-      row.innerHTML = `<label>${key.replace(/_/g, " ")}</label>${field}
-        <span class="def">default: ${def}</span><button data-r="${key}">Reset</button>`;
-      box.appendChild(row);
+      rail.dataset.built = "1";
     }
-    for (const el of box.querySelectorAll("[data-k]")) {
-      if (el.tagName === "SELECT" && el.dataset.k === "theme") el.value = state.settings.theme;
-      el.onchange = () => {
-        const k = el.dataset.k;
-        let v = el.type === "checkbox" ? el.checked : el.value;
-        if (typeof state.defaults[k] === "number") v = Number(v);
-        send({ cmd:"setting", key:k, value:v });
+    app.drawOptions();
+  },
+  drawOptions() {
+    const query = ($("search").value || "").toLowerCase();
+    for (const b of $("rail").children)
+      b.classList.toggle("on", b.textContent === activeGroup && !query);
+    const box = $("sets");
+    box.innerHTML = "";
+    const groups = query ? Object.keys(GROUPS) : [activeGroup];
+    for (const group of groups) {
+      const keys = GROUPS[group].filter(k =>
+        !query || k.replace(/_/g, " ").includes(query));
+      if (!keys.length) continue;
+      const wrap = document.createElement("div");
+      wrap.className = "grp";
+      if (query) wrap.innerHTML = "<h4>" + group + "</h4>";
+      for (const key of keys) wrap.appendChild(app.settingRow(key));
+      box.appendChild(wrap);
+    }
+    if (!box.children.length)
+      box.innerHTML = '<div class="grp" style="color:var(--dim)">Nothing matches.</div>';
+  },
+  settingRow(key) {
+    const value = state.settings[key];
+    const fallback = state.defaults[key];
+    const row = document.createElement("div");
+    row.className = "set";
+
+    const label = document.createElement("div");
+    label.className = "lab";
+    label.innerHTML = key.replace(/_/g, " ") +
+      '<span class="sub">default: ' + String(fallback) + "</span>";
+    row.appendChild(label);
+
+    let control;
+    if (key === "theme") {
+      control = document.createElement("div");
+      control.className = "sw";
+      for (const t of state.themes) {
+        const b = document.createElement("button");
+        b.style.background = t.bg;
+        b.style.borderColor = t.rule;
+        b.title = t.name;
+        b.classList.toggle("on", t.id === value);
+        b.onclick = () => send({ cmd:"setting", key:"theme", value:t.id });
+        control.appendChild(b);
+      }
+    } else if (CHOICES[key]) {
+      control = document.createElement("select");
+      for (const choice of CHOICES[key]) {
+        const o = document.createElement("option");
+        o.value = choice; o.textContent = choice;
+        o.selected = choice === value;
+        control.appendChild(o);
+      }
+    } else if (key.endsWith("_font")) {
+      control = document.createElement("select");
+      const mono = key === "code_font";
+      const list = state.fonts.filter(f => !mono || f.monospace);
+      const current = document.createElement("option");
+      current.value = value; current.textContent = value; current.selected = true;
+      control.appendChild(current);
+      for (const f of list) {
+        const o = document.createElement("option");
+        o.value = f.name;
+        o.textContent = f.name + (f.nerd ? "   (patched)" : "");
+        control.appendChild(o);
+      }
+    } else if (typeof value === "boolean") {
+      control = document.createElement("input");
+      control.type = "checkbox";
+      control.checked = value;
+    } else if (typeof value === "number") {
+      control = document.createElement("input");
+      control.type = "number";
+      control.step = Number.isInteger(fallback) ? 1 : 0.05;
+      control.value = value;
+    } else {
+      control = document.createElement("input");
+      control.type = "text";
+      control.value = value;
+    }
+    if (control.tagName !== "DIV") {
+      control.onchange = () => {
+        let next = control.type === "checkbox" ? control.checked : control.value;
+        if (typeof fallback === "number") next = Number(next);
+        send({ cmd:"setting", key, value:next });
       };
     }
-    for (const el of box.querySelectorAll("[data-r]"))
-      el.onclick = () => send({ cmd:"setting", key:el.dataset.r, value:state.defaults[el.dataset.r] });
+    row.appendChild(control);
+
+    const reset = document.createElement("button");
+    reset.className = "rst";
+    reset.textContent = "\u21ba";
+    reset.title = "Back to the default";
+    reset.onclick = () => send({ cmd:"setting", key, value:fallback });
+    row.appendChild(reset);
+    return row;
   },
-  warn(t) { $("warn").textContent = t || ""; }
+  warn(t) { $("pnote").textContent = t || "Changes apply as you make them."; }
 };
 window.app = app;
 
@@ -421,11 +550,43 @@ $("b-view").onclick = () => send({ cmd:"setting", key:"view_mode",
 $("b-open").onclick = () => send({ cmd:"open" });
 $("b-save").onclick = () => send({ cmd:"save", text:$("text").value });
 $("b-edit").onclick = () => { app.toggleEdit(!state.editing); if (state.editing) send({ cmd:"wantSource" }); };
-$("b-side").onclick = () => send({ cmd:"setting", key:"sidebar_visible", value:!state.settings.sidebar_visible });
+$("b-side").onclick = () => send({ cmd:"setting", key:"sidebar",
+  value: state.settings.sidebar === "off" ? "auto" : "off" });
+$("sidepin").onclick = () => send({ cmd:"setting", key:"sidebar",
+  value: state.settings.sidebar === "always" ? "auto" : "always" });
+$("sidehot").onmouseenter = () => $("side").classList.add("show");
+$("side").onmouseleave = () => {
+  if (state.settings.sidebar === "auto" && !dragging)
+    setTimeout(() => { if (!dragging) $("side").classList.remove("show"); }, 200);
+};
+$("side").onmouseenter = () => $("side").classList.add("show");
+
+let dragging = false;
+$("grip").onmousedown = e => {
+  e.preventDefault();
+  dragging = true;
+  $("grip").classList.add("dragging");
+  const move = ev => {
+    const w = Math.min(640, Math.max(150, ev.clientX));
+    document.documentElement.style.setProperty("--side-w", w + "px");
+  };
+  const up = () => {
+    dragging = false;
+    $("grip").classList.remove("dragging");
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    const w = parseInt(getComputedStyle(document.documentElement)
+      .getPropertyValue("--side-w"), 10) || 260;
+    send({ cmd:"setting", key:"sidebar_width", value:w });
+  };
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mouseup", up);
+};
 $("b-theme").onchange = e => send({ cmd:"setting", key:"theme", value:e.target.value });
 $("b-opts").onclick = () => app.options(true);
 $("opt-close").onclick = () => app.options(false);
 $("opt-reset").onclick = () => send({ cmd:"resetSettings" });
+$("search").oninput = () => app.drawOptions();
 $("b-zoomin").onclick = () => send({ cmd:"setting", key:"zoom", value:Math.min(3, (state.settings.zoom || 1) + 0.1) });
 $("b-zoomout").onclick = () => send({ cmd:"setting", key:"zoom", value:Math.max(0.5, (state.settings.zoom || 1) - 0.1) });
 $("b-find").onclick = () => { $("find").classList.add("show"); $("find-text").focus(); };

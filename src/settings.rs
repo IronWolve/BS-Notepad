@@ -22,7 +22,9 @@ pub struct Settings {
     pub syntax_colour: bool,
     /// "auto" keeps the bar out of the way until the mouse reaches the top.
     pub chrome: String,
-    pub sidebar_visible: bool,
+    /// "auto" slides the pane in when the mouse reaches the left edge,
+    /// "always" keeps it docked, "off" never shows it.
+    pub sidebar: String,
     pub sidebar_width: u32,
     pub sidebar_tab: String,
     pub window_width: u32,
@@ -57,7 +59,7 @@ impl Default for Settings {
             syntax_colour: true,
             chrome: "auto".into(),
             // Starts bare on purpose: panes and chrome appear when asked for.
-            sidebar_visible: false,
+            sidebar: "auto".into(),
             sidebar_width: 260,
             sidebar_tab: "files".into(),
             window_width: 1200,
