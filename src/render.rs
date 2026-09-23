@@ -28,7 +28,7 @@ impl Renderer {
         }
     }
 
-    pub fn to_page(&self, markdown: &str, settings: &Settings) -> String {
+    pub fn to_page(&self, markdown: &str, settings: &Settings, name: &str) -> String {
         let theme = self
             .themes
             .themes
@@ -68,7 +68,7 @@ impl Renderer {
 
         let mut body = String::new();
         html::push_html(&mut body, events.into_iter());
-        shell(&body, settings)
+        shell(&body, settings, name)
     }
 }
 
@@ -76,18 +76,30 @@ fn html_escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-fn shell(body: &str, s: &Settings) -> String {
+fn shell(body: &str, s: &Settings, name: &str) -> String {
     format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><style>
 :root {{
-  --bg:#2b303b; --fg:#c0c5ce; --rule:#4f5b66; --link:#8fa1b3; --panel:#232830;
+  --bg:#2b303b; --fg:#c0c5ce; --rule:#4f5b66; --link:#8fa1b3;
+  --panel:#232830; --bar:#1f242c; --dim:#7a8593;
 }}
 html,body {{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--fg); }}
-body {{ font:{body_size}px/{line_height} {body_font}; display:flex; }}
+body {{ font:{body_size}px/{line_height} {body_font}; display:flex; flex-direction:column; }}
+#bar {{
+  flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:6px 10px;
+  background:var(--bar); border-bottom:1px solid var(--rule); font-size:13px;
+}}
+#bar button {{
+  background:transparent; color:var(--fg); border:1px solid var(--rule);
+  border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer;
+}}
+#bar button:hover {{ background:var(--panel); }}
+#name {{ color:var(--dim); margin-left:4px; }}
+#row {{ flex:1 1 auto; display:flex; min-height:0; }}
 #tree {{
   width:{sidebar}px; flex:0 0 auto; background:var(--panel); overflow:auto;
   border-right:1px solid var(--rule); padding:12px; box-sizing:border-box;
-  display:{tree_display};
+  display:{tree_display}; color:var(--dim); font-size:13px;
 }}
 #doc {{ flex:1 1 auto; overflow:auto; }}
 /* The whole window width is the text column. No max-width cap. */
@@ -99,8 +111,28 @@ table {{ border-collapse:collapse; }}
 td,th {{ border:1px solid var(--rule); padding:4px 10px; }}
 img {{ max-width:100%; }}
 </style></head><body>
-<nav id="tree"></nav>
-<div id="doc"><main>{body}</main></div>
+<header id="bar">
+  <button id="toggle" title="Show or hide the file tree">&#9776;</button>
+  <button id="open" title="Open a file (Ctrl+O)">Open</button>
+  <span id="name">{name}</span>
+</header>
+<div id="row">
+  <nav id="tree">File tree arrives in the next stage.</nav>
+  <div id="doc"><main>{body}</main></div>
+</div>
+<script>
+document.getElementById('open').onclick = () => window.ipc.postMessage('open');
+document.getElementById('toggle').onclick = () => {{
+  const t = document.getElementById('tree');
+  t.style.display = (t.style.display === 'none') ? 'block' : 'none';
+  window.ipc.postMessage('tree:' + (t.style.display === 'none' ? '0' : '1'));
+}};
+document.addEventListener('keydown', e => {{
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {{
+    e.preventDefault(); window.ipc.postMessage('open');
+  }}
+}});
+</script>
 </body></html>"#,
         body_size = s.body_size,
         line_height = s.line_height,
@@ -109,6 +141,7 @@ img {{ max-width:100%; }}
         code_font = s.code_font,
         sidebar = s.sidebar_width,
         tree_display = if s.sidebar_visible { "block" } else { "none" },
+        name = html_escape(name),
         body = body,
     )
 }

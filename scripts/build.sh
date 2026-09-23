@@ -46,6 +46,18 @@ cp "$ROOT/tmp/target/x86_64-pc-windows-gnu/release/$BIN.exe" "$ROOT/deploy/windo
 row "deploy/linux" "$BIN"
 row "deploy/windows" "$BIN.exe"
 
+# The mingw build links the WebView2 loader dynamically, so the DLL has to
+# travel with the exe. Version comes from the lock file, never hardcoded.
+W2VER=$(grep -A1 'name = "webview2-com-sys"' "$REPO/Cargo.lock" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+W2DLL=$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" \
+          -path "*webview2-com-sys-$W2VER/x64/WebView2Loader.dll" 2>/dev/null | head -1)
+if [ -n "$W2DLL" ]; then
+  cp "$W2DLL" "$ROOT/deploy/windows/WebView2Loader.dll"
+  row "deploy/windows" "WebView2Loader.dll ($W2VER)"
+else
+  printf "${ERR}%-18s${Z} %s\n" "missing dll" "WebView2Loader.dll for $W2VER not found"; exit 1
+fi
+
 if [ -d /mnt/c/work ]; then
   if [ -f "$WIN_DEST/$BIN.exe" ]; then
     mkdir -p "$WIN_DEST-previous"
@@ -54,6 +66,7 @@ if [ -d /mnt/c/work ]; then
   fi
   mkdir -p "$WIN_DEST"
   cp "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/$BIN.exe"
+  cp "$ROOT/deploy/windows/WebView2Loader.dll" "$WIN_DEST/WebView2Loader.dll"
   printf "${OK}%-18s${Z} ${V}%s${Z}\n" "installed" "C:\\work\\$NAME\\$BIN.exe"
 else
   printf "${WARN}%-18s${Z} %s\n" "skipped install" "/mnt/c/work not present"
