@@ -280,7 +280,11 @@ impl App {
             map.insert(key.to_string(), value);
         }
         if let Ok(updated) = serde_json::from_value::<Settings>(current) {
-            let rerender = matches!(key, "theme" | "highlight_limit_kb" | "plain_text_above_mb");
+            let rerender = matches!(
+                key,
+                "theme" | "highlight_limit_kb" | "plain_text_above_mb"
+                    | "view_mode" | "syntax_colour"
+            );
             self.settings = updated;
             self.send_settings();
             if rerender {
@@ -404,8 +408,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut settings = Settings::load(&root);
-    let mut renderer = Renderer::new();
-    renderer.load_extra_themes(&root);
+    let renderer = Renderer::new();
     let font_list = fonts::families();
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();

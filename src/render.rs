@@ -2,9 +2,10 @@ use std::path::Path;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
 use serde::Serialize;
-use syntect::highlighting::{Theme as CodeTheme, ThemeSet};
+use syntect::highlighting::Theme as CodeTheme;
 use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
+use two_face::theme::EmbeddedLazyThemeSet;
 
 use crate::assets;
 use crate::settings::Settings;
@@ -28,7 +29,7 @@ pub struct Document {
 
 pub struct Renderer {
     syntaxes: SyntaxSet,
-    themes: ThemeSet,
+    themes: EmbeddedLazyThemeSet,
 }
 
 fn escape(text: &str) -> String {
@@ -67,11 +68,6 @@ fn level_number(level: HeadingLevel) -> u8 {
     }
 }
 
-/// Language hint for a file opened directly rather than through markdown.
-fn language_for(path: &Path) -> &str {
-    path.extension().and_then(|e| e.to_str()).unwrap_or("txt")
-}
-
 pub fn is_markdown(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref(),
@@ -82,39 +78,55 @@ pub fn is_markdown(path: &Path) -> bool {
 impl Renderer {
     pub fn new() -> Self {
         Self {
-            syntaxes: SyntaxSet::load_defaults_newlines(),
-            themes: ThemeSet::load_defaults(),
-        }
-    }
-
-    /// Colouring sets dropped into `themes/` are merged with the built-in ones.
-    pub fn load_extra_themes(&mut self, root: &Path) {
-        for (name, path) in crate::theme::extra_code_themes(root) {
-            if let Ok(theme) = ThemeSet::get_theme(&path) {
-                self.themes.themes.insert(name, theme);
-            }
+            // The extended set: 200-odd languages, so PowerShell, Dockerfile,
+            // batch files and the rest colour like everything else.
+            syntaxes: two_face::syntax::extra_newlines(),
+            themes: two_face::theme::extra(),
         }
     }
 
     fn code_theme(&self, theme: &Theme) -> &CodeTheme {
-        self.themes
-            .themes
-            .get(&theme.id)
-            .or_else(|| self.themes.themes.get(&theme.code))
-            .unwrap_or_else(|| &self.themes.themes["base16-ocean.dark"])
+        self.themes.get(crate::theme::code_theme_name(&theme.id))
     }
 
-    fn highlight(&self, code: &str, language: &str, theme: &CodeTheme, colour: bool) -> String {
+    /// Language for a file the tree opened directly, falling back to the file
+    /// name itself so things like Dockerfile and Makefile still colour.
+    fn syntax_for(&self, path: &Path) -> &syntect::parsing::SyntaxReference {
+        let by_extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(|e| self.syntaxes.find_syntax_by_token(e));
+        let by_name = || {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| self.syntaxes.find_syntax_by_token(n))
+        };
+        by_extension
+            .or_else(by_name)
+            .unwrap_or_else(|| self.syntaxes.find_syntax_plain_text())
+    }
+
+    fn colour_with(
+        &self,
+        code: &str,
+        syntax: &syntect::parsing::SyntaxReference,
+        theme: &CodeTheme,
+        colour: bool,
+    ) -> String {
         if !colour {
             return format!("<pre class=\"plain\"><code>{}</code></pre>", escape(code));
         }
+        // Inline styles rather than CSS classes: measured smaller and faster.
+        highlighted_html_for_string(code, &self.syntaxes, syntax, theme)
+            .unwrap_or_else(|_| format!("<pre>{}</pre>", escape(code)))
+    }
+
+    fn highlight(&self, code: &str, language: &str, theme: &CodeTheme, colour: bool) -> String {
         let syntax = self
             .syntaxes
             .find_syntax_by_token(language)
             .unwrap_or_else(|| self.syntaxes.find_syntax_plain_text());
-        // Inline styles rather than CSS classes: measured smaller and faster.
-        highlighted_html_for_string(code, &self.syntaxes, syntax, theme)
-            .unwrap_or_else(|_| format!("<pre>{}</pre>", escape(code)))
+        self.colour_with(code, syntax, theme, colour)
     }
 
     /// A leading `---` block is metadata, not content. Rendered as markdown it
@@ -152,17 +164,27 @@ impl Renderer {
             };
         }
 
-        // A source file is one long code block in its own language.
-        if let Some(p) = path {
-            if !is_markdown(p) {
-                let language = language_for(p);
-                return Document {
-                    html: self.highlight(text, language, code_theme, true),
-                    outline: Vec::new(),
-                    note: format!("source file, coloured as {}", language),
-                    front_matter: String::new(),
-                };
-            }
+        // Anything that is not markdown, and markdown itself when the source
+        // view is asked for, is shown as its own text - coloured in whatever
+        // language it is.
+        let as_source = settings.view_mode == "source"
+            || path.map(|p| !is_markdown(p)).unwrap_or(false);
+        if as_source {
+            let syntax = match path {
+                Some(p) => self.syntax_for(p),
+                None => self.syntaxes.find_syntax_plain_text(),
+            };
+            let name = syntax.name.clone();
+            return Document {
+                html: self.colour_with(text, syntax, code_theme, settings.syntax_colour),
+                outline: Vec::new(),
+                note: if settings.syntax_colour {
+                    format!("text view - {}", name)
+                } else {
+                    "text view - colouring off".into()
+                },
+                front_matter: String::new(),
+            };
         }
 
         let (front_matter, body_text) = Self::split_front_matter(text);
@@ -175,7 +197,8 @@ impl Renderer {
             .step_by(2)
             .map(|chunk| chunk.len())
             .sum();
-        let colour = code_bytes <= settings.highlight_limit_kb as usize * 1024;
+        let colour = settings.syntax_colour
+            && code_bytes <= settings.highlight_limit_kb as usize * 1024;
 
         let parser = Parser::new_ext(body_text, Options::all());
         let mut events: Vec<Event> = Vec::new();
@@ -285,7 +308,7 @@ impl Renderer {
         let mut body = String::new();
         html::push_html(&mut body, events.into_iter());
 
-        let note = if colour {
+        let note = if colour || !settings.syntax_colour {
             String::new()
         } else {
             format!(

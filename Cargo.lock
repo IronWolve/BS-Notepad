@@ -1297,7 +1297,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "notepad"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fontdb",
  "pulldown-cmark",
@@ -1306,6 +1306,7 @@ dependencies = [
  "serde_json",
  "syntect",
  "tao",
+ "two-face",
  "wry",
 ]
 
@@ -2447,6 +2448,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow 1.0.4",
+]
+
+[[package]]
+name = "two-face"
+version = "0.5.2+bat-0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "915be7adc2ff6f4338acbf71f3eda0a146f46003b992a1669c674308610efdac"
+dependencies = [
+ "serde",
+ "serde_derive",
+ "syntect",
 ]
 
 [[package]]

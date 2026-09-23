@@ -13,8 +13,19 @@ pub const SHELL: &str = r##"<!doctype html><html><head><meta charset="utf-8"><st
 html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); }
 body { display:flex; flex-direction:column; font:var(--ui-size)/1.4 var(--ui-font); }
 
-#bar { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:5px 8px;
+/* The bar stays out of the way until the mouse reaches the top edge. */
+#hot { position:absolute; top:0; left:0; right:0; height:10px; z-index:5; }
+#bar { display:flex; align-items:center; gap:6px; padding:5px 8px;
        background:var(--bar); border-bottom:1px solid var(--rule); }
+body.auto #bar { position:absolute; top:0; left:0; right:0; z-index:6;
+       transform:translateY(-100%); transition:transform .14s ease; }
+body.auto #bar.show, body.auto #bar.pinned { transform:none; }
+#peek { position:absolute; top:0; left:50%; transform:translateX(-50%); z-index:4;
+       background:var(--bar); color:var(--dim); border:1px solid var(--rule);
+       border-top:0; border-radius:0 0 6px 6px; padding:0 12px; font-size:11px;
+       display:none; }
+body.auto #peek { display:block; }
+body.auto #bar.show ~ #peek, body.auto #bar.pinned ~ #peek { opacity:0; }
 #bar button, #bar select {
   background:transparent; color:var(--fg); border:1px solid var(--rule);
   border-radius:4px; padding:3px 9px; font:inherit; cursor:pointer;
@@ -106,10 +117,12 @@ article pre:hover .copy { opacity:1; }
 #warn { color:#e5c07b; padding:6px 0; }
 </style></head><body>
 
+<div id="hot"></div>
 <header id="bar">
   <button id="b-side" title="File tree (Ctrl+B)">&#9776;</button>
   <button id="b-open" title="Open (Ctrl+O)">Open</button>
   <button id="b-save" title="Save (Ctrl+S)">Save</button>
+  <button id="b-view" title="Rendered or plain text (Ctrl+U)">Text</button>
   <button id="b-edit" title="Edit the source (Ctrl+E)">Edit</button>
   <span class="sp"></span>
   <button id="b-find" title="Find (Ctrl+F)">Find</button>
@@ -120,7 +133,9 @@ article pre:hover .copy { opacity:1; }
   <button id="b-opts" title="Options">Options</button>
   <span id="name">no file open</span>
   <span id="note"></span>
+  <button id="b-pin" title="Keep this bar visible">&#9679;</button>
 </header>
+<div id="peek">&#9662;</div>
 
 <div id="find">
   <input id="find-text" placeholder="Find in document" autocomplete="off">
@@ -201,6 +216,9 @@ const app = {
     $("side").classList.toggle("hidden", !s.sidebar_visible);
     $("b-side").classList.toggle("on", s.sidebar_visible);
     $("b-theme").value = s.theme;
+    document.body.classList.toggle("auto", s.chrome === "auto");
+    $("b-view").textContent = s.view_mode === "source" ? "Rendered" : "Text";
+    $("b-view").classList.toggle("on", s.view_mode === "source");
     for (const b of document.querySelectorAll("#tabs button"))
       b.classList.toggle("on", b.dataset.pane === s.sidebar_tab);
     for (const p of ["files","outline","recent"])
@@ -326,6 +344,11 @@ const app = {
       } else if (key.endsWith("_font")) {
         const mono = key === "code_font";
         field = `<select data-k="${key}"><option value="${value}">${value} (current)</option>${fontOptions(mono ? "mono" : "any")}</select>`;
+      } else if (key === "view_mode" || key === "chrome" || key === "sidebar_tab") {
+        const choices = key === "view_mode" ? ["rendered","source"]
+                      : key === "chrome" ? ["auto","always"]
+                      : ["files","outline","recent"];
+        field = `<select data-k="${key}">${choices.map(c => `<option value="${c}"${c===value?" selected":""}>${c}</option>`).join("")}</select>`;
       } else if (typeof value === "boolean") {
         field = `<input type="checkbox" data-k="${key}"${value ? " checked" : ""}>`;
       } else if (typeof value === "number") {
@@ -384,6 +407,17 @@ function focusMark() {
 }
 function step(d) { if (!marks.length) return; at = (at + d + marks.length) % marks.length; focusMark(); }
 
+let pinned = false;
+$("hot").onmouseenter = () => $("bar").classList.add("show");
+$("bar").onmouseleave = () => { if (!pinned) setTimeout(() => $("bar").classList.remove("show"), 200); };
+$("bar").onmouseenter = () => $("bar").classList.add("show");
+$("b-pin").onclick = () => {
+  pinned = !pinned;
+  $("bar").classList.toggle("pinned", pinned);
+  $("b-pin").classList.toggle("on", pinned);
+};
+$("b-view").onclick = () => send({ cmd:"setting", key:"view_mode",
+  value: state.settings.view_mode === "source" ? "rendered" : "source" });
 $("b-open").onclick = () => send({ cmd:"open" });
 $("b-save").onclick = () => send({ cmd:"save", text:$("text").value });
 $("b-edit").onclick = () => { app.toggleEdit(!state.editing); if (state.editing) send({ cmd:"wantSource" }); };
@@ -415,6 +449,7 @@ document.addEventListener("keydown", e => {
   else if (ctrl && e.key.toLowerCase() === "e") { e.preventDefault(); $("b-edit").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "b") { e.preventDefault(); $("b-side").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "f") { e.preventDefault(); $("b-find").onclick(); }
+  else if (ctrl && e.key.toLowerCase() === "u") { e.preventDefault(); $("b-view").onclick(); }
   else if (ctrl && (e.key === "=" || e.key === "+")) { e.preventDefault(); $("b-zoomin").onclick(); }
   else if (ctrl && e.key === "-") { e.preventDefault(); $("b-zoomout").onclick(); }
   else if (ctrl && e.key === "0") { e.preventDefault(); send({ cmd:"setting", key:"zoom", value:1 }); }

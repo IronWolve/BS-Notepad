@@ -17,6 +17,11 @@ pub struct Settings {
     pub line_height: f32,
     pub ligatures: bool,
     pub zoom: f32,
+    /// How the document is shown: the rendered page, or its own text.
+    pub view_mode: String,
+    pub syntax_colour: bool,
+    /// "auto" keeps the bar out of the way until the mouse reaches the top.
+    pub chrome: String,
     pub sidebar_visible: bool,
     pub sidebar_width: u32,
     pub sidebar_tab: String,
@@ -48,7 +53,11 @@ impl Default for Settings {
             line_height: 1.65,
             ligatures: false,
             zoom: 1.0,
-            sidebar_visible: true,
+            view_mode: "rendered".into(),
+            syntax_colour: true,
+            chrome: "auto".into(),
+            // Starts bare on purpose: panes and chrome appear when asked for.
+            sidebar_visible: false,
             sidebar_width: 260,
             sidebar_tab: "files".into(),
             window_width: 1200,

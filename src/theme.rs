@@ -1,4 +1,3 @@
-use std::path::Path;
 
 use serde::Serialize;
 
@@ -37,21 +36,21 @@ fn t(
 pub fn builtin() -> Vec<Theme> {
     vec![
         t("light", "Light", false, "#ffffff", "#24292f", "#f6f8fa", "#f0f3f6",
-          "#d0d7de", "#0969da", "#6e7781", "#0969da", "InspiredGitHub"),
+          "#d0d7de", "#0969da", "#6e7781", "#0969da", "Github"),
         t("dark", "Dark", true, "#2b303b", "#c0c5ce", "#232830", "#1f242c",
-          "#4f5b66", "#8fa1b3", "#7a8593", "#8fa1b3", "base16-ocean.dark"),
+          "#4f5b66", "#8fa1b3", "#7a8593", "#8fa1b3", "Base16OceanDark"),
         t("dracula", "Dracula", true, "#282a36", "#f8f8f2", "#21222c", "#191a21",
-          "#44475a", "#bd93f9", "#6272a4", "#ff79c6", "base16-mocha.dark"),
+          "#44475a", "#bd93f9", "#6272a4", "#ff79c6", "Dracula"),
         t("solarized-dark", "Solarized Dark", true, "#002b36", "#93a1a1", "#073642",
-          "#00212b", "#094959", "#268bd2", "#586e75", "#b58900", "Solarized (dark)"),
+          "#00212b", "#094959", "#268bd2", "#586e75", "#b58900", "SolarizedDark"),
         t("solarized-light", "Solarized Light", false, "#fdf6e3", "#586e75", "#eee8d5",
-          "#e8e1cc", "#d7cfb8", "#268bd2", "#93a1a1", "#b58900", "Solarized (light)"),
+          "#e8e1cc", "#d7cfb8", "#268bd2", "#93a1a1", "#b58900", "SolarizedLight"),
         t("nord", "Nord", true, "#2e3440", "#d8dee9", "#3b4252", "#2b3240",
-          "#4c566a", "#88c0d0", "#7b88a1", "#81a1c1", "base16-ocean.dark"),
+          "#4c566a", "#88c0d0", "#7b88a1", "#81a1c1", "Nord"),
         t("gruvbox", "Gruvbox Dark", true, "#282828", "#ebdbb2", "#32302f", "#1d2021",
-          "#504945", "#83a598", "#928374", "#fabd2f", "base16-eighties.dark"),
+          "#504945", "#83a598", "#928374", "#fabd2f", "GruvboxDark"),
         t("monokai", "Monokai", true, "#272822", "#f8f8f2", "#2f302a", "#1e1f1a",
-          "#49483e", "#66d9ef", "#75715e", "#a6e22e", "base16-eighties.dark"),
+          "#49483e", "#66d9ef", "#75715e", "#a6e22e", "MonokaiExtended"),
     ]
 }
 
@@ -62,22 +61,20 @@ pub fn find(id: &str) -> Theme {
         .unwrap_or_else(|| builtin().into_iter().find(|t| t.id == "dark").unwrap())
 }
 
-/// Extra colouring sets dropped into `themes/` beside the binary are picked up
-/// at startup, so an exact palette can be added without a rebuild.
-pub fn extra_code_themes(root: &Path) -> Vec<(String, std::path::PathBuf)> {
-    let dir = root.join("themes");
-    let mut found = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("tmTheme") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    found.push((stem.to_string(), path));
-                }
-            }
-        }
+/// Each theme names the colouring set its code blocks use, so the page and the
+/// code always come from the same palette rather than an approximation.
+pub fn code_theme_name(id: &str) -> two_face::theme::EmbeddedThemeName {
+    use two_face::theme::EmbeddedThemeName as E;
+    match find(id).code.as_str() {
+        "Github" => E::Github,
+        "Dracula" => E::Dracula,
+        "SolarizedDark" => E::SolarizedDark,
+        "SolarizedLight" => E::SolarizedLight,
+        "Nord" => E::Nord,
+        "GruvboxDark" => E::GruvboxDark,
+        "MonokaiExtended" => E::MonokaiExtended,
+        _ => E::Base16OceanDark,
     }
-    found
 }
 
 fn channel(hex: &str, at: usize) -> f64 {
