@@ -59,15 +59,33 @@ else
 fi
 
 if [ -d /mnt/c/work ]; then
-  if [ -f "$WIN_DEST/$BIN.exe" ]; then
-    mkdir -p "$WIN_DEST-previous"
-    cp "$WIN_DEST/$BIN.exe" "$WIN_DEST-previous/$BIN.exe"
-    printf "${D}%-18s %s${Z}\n" "kept previous" "$(basename "$WIN_DEST")-previous"
-  fi
   mkdir -p "$WIN_DEST"
+  # An existing build is moved into a version folder INSIDE the install dir.
+  # Never a sibling directory, and never deleted.
+  if [ -f "$WIN_DEST/$BIN.exe" ]; then
+    OLD=$(sed -n 's/.*"version"[: ]*"\([^"]*\)".*/\1/p' "$WIN_DEST/installed.json" 2>/dev/null | head -1)
+    [ -n "$OLD" ] || OLD="unknown-$(date +%Y%m%d-%H%M%S)"
+    ARCHIVE="$WIN_DEST/$BIN-$OLD"
+    mkdir -p "$ARCHIVE"
+    mv -f "$WIN_DEST/$BIN.exe" "$ARCHIVE/$BIN.exe"
+    [ -f "$WIN_DEST/WebView2Loader.dll" ] && mv -f "$WIN_DEST/WebView2Loader.dll" "$ARCHIVE/WebView2Loader.dll"
+    [ -f "$WIN_DEST/installed.json" ] && mv -f "$WIN_DEST/installed.json" "$ARCHIVE/installed.json"
+    if [ -f "$ARCHIVE/$BIN.exe" ]; then
+      printf "${D}%-18s %s${Z}\n" "kept previous" "$BIN-$OLD\\ (inside the install dir)"
+    else
+      printf "${ERR}%-18s${Z} %s\n" "archive failed" "$ARCHIVE"; exit 1
+    fi
+  fi
   cp "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/$BIN.exe"
   cp "$ROOT/deploy/windows/WebView2Loader.dll" "$WIN_DEST/WebView2Loader.dll"
-  printf "${OK}%-18s${Z} ${V}%s${Z}\n" "installed" "C:\\work\\$NAME\\$BIN.exe"
+  printf '{"name":"%s","version":"%s","installed":"%s"}\n' \
+    "$BIN" "$VER" "$(date -Is)" > "$WIN_DEST/installed.json"
+  # Say it only if it is true.
+  if [ -f "$WIN_DEST/$BIN.exe" ] && [ -f "$WIN_DEST/WebView2Loader.dll" ]; then
+    printf "${OK}%-18s${Z} ${V}%s${Z}\n" "installed" "C:\\work\\$NAME\\$BIN.exe ($VER)"
+  else
+    printf "${ERR}%-18s${Z} %s\n" "install failed" "files missing at $WIN_DEST"; exit 1
+  fi
 else
   printf "${WARN}%-18s${Z} %s\n" "skipped install" "/mnt/c/work not present"
 fi
