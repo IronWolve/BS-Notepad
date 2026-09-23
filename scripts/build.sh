@@ -78,6 +78,7 @@ if [ -d /mnt/c/work ]; then
   fi
   cp "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/$BIN.exe"
   cp "$ROOT/deploy/windows/WebView2Loader.dll" "$WIN_DEST/WebView2Loader.dll"
+  cp "$REPO/scripts/register-file-types.ps1" "$WIN_DEST/register-file-types.ps1"
   printf '{"name":"%s","version":"%s","installed":"%s"}\n' \
     "$BIN" "$VER" "$(date -Is)" > "$WIN_DEST/installed.json"
   # Say it only if it is true.

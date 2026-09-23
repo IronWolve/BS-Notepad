@@ -27,7 +27,10 @@ if [ ! -x "$BIN" ]; then bad "rename smoke test" "no release build at tmp/target
   mkdir -p "$WORK"
   cp "$BIN" "$WORK/"
   printf '# Renamed\n\nRunning from a differently named directory.\n' > "$WORK/doc.md"
-  OUT=$(cd "$WORK" && EXIT_WHEN_READY=1 timeout 60 xvfb-run -a -s '-screen 0 1200x800x24' ./notepad doc.md 2>&1)
+  # DISPLAY alone is not enough: with WAYLAND_DISPLAY set, GTK ignores the
+  # virtual display and opens a real window on the desktop.
+  OUT=$(cd "$WORK" && env -u WAYLAND_DISPLAY GDK_BACKEND=x11 XDG_SESSION_TYPE=x11 \
+        EXIT_WHEN_READY=1 timeout 60 xvfb-run -a -s '-screen 0 1200x800x24' ./notepad doc.md 2>&1)
   if echo "$OUT" | grep -q READY_MS; then
     ok "rename smoke test" "ran from $(basename "$WORK") ($(echo "$OUT" | grep -o 'READY_MS=[0-9]*'))"
     [ -f "$WORK/settings.json" ] && ok "self-contained" "settings written beside the binary, not in \$HOME" \

@@ -1,9 +1,10 @@
 [package]
 name = "notepad"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+fontdb = "0.24.0"
 pulldown-cmark = "0.13"
 rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }

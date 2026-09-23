@@ -52,7 +52,12 @@ pub fn line(msg: &str) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() % 86_400)
         .unwrap_or(0);
-    let entry = format!("{:02}:{:02}:{:02} {}", stamp / 3600, (stamp % 3600) / 60, stamp % 60, msg);
+    // UTC, and labelled as such: reading a log against the wrong clock wastes
+    // more time than the offset saves.
+    let entry = format!(
+        "{:02}:{:02}:{:02}Z {}",
+        stamp / 3600, (stamp % 3600) / 60, stamp % 60, msg
+    );
     if s.recent.len() == RING {
         s.recent.pop_front();
     }
