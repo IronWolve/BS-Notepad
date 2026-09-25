@@ -34,6 +34,14 @@ function editorFor(id) {
   state.activeTab=id;
   return node;
 }
+app.documentChrome = () => {
+  const single=state.tabs?.length===1,tab=single?state.tabs[0]:null;
+  $('document-head').hidden=single;
+  $('single-title').textContent=tab ? tab.name + (tab.dirty ? ' •' : '') : '';
+  $('single-title').setAttribute('aria-label',tab ? tab.name + (tab.dirty ? ', unsaved changes' : '') : '');
+  $('content-row').setAttribute('role',single?'region':'tabpanel');
+  if(single)$('content-row').setAttribute('aria-labelledby','single-title');
+};
 app.setTabs = payload => {
   state.tabs=payload.tabs;
   const live=new Set(payload.tabs.map(tab=>tab.id));
@@ -69,12 +77,14 @@ app.setTabs = payload => {
     wrap.append(button,close);scroller.appendChild(wrap);
   }
   $('content-row').setAttribute('aria-labelledby','tab-'+payload.active);
+  app.documentChrome();
   scroller.scrollLeft=scroll;
-  if(focus)scroller.querySelector(`.tab-label[data-tab-id="${payload.active}"]`)?.focus();
-  if(payload.active!==state.activeTab)scroller.querySelector('.document-tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
+  if(focus){if(payload.tabs.length===1)$('b-menu').focus();else scroller.querySelector(`.tab-label[data-tab-id="${payload.active}"]`)?.focus();}
+  if(payload.tabs.length>1&&payload.active!==state.activeTab)scroller.querySelector('.document-tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
 };
 app.updateTabDirty = dirty => {
   const tab=state.tabs?.find(t=>t.id===state.activeTab);if(tab)tab.dirty=dirty;
+  app.documentChrome();
   const marker=$('document-tabs').querySelector(`[data-id="${state.activeTab}"] .tab-dirty`);if(marker)marker.hidden=!dirty;
 };
 const baseDocument=app.setDocument;
@@ -119,7 +129,7 @@ function showMenu(anchor,items,point) {
   const menu=$('menu-popup');menu.replaceChildren();
   for(const item of items) {
     if(!item){menu.appendChild(document.createElement('hr'));continue;}
-    const button=document.createElement('button');button.setAttribute('role','menuitem');button.disabled=!!item.disabled;
+    const button=document.createElement('button');button.setAttribute('role','menuitem');button.disabled=!!item.disabled;if(item.brand)button.classList.add('menu-brand');
     const icon=document.createElement('span');icon.className='menu-symbol';icon.textContent=item.symbol||'';icon.setAttribute('aria-hidden','true');
     const label=document.createElement('span');label.className='menu-label';label.textContent=item.label;
     const hint=document.createElement('span');hint.className='menu-hint';hint.textContent=item.hint||'';
@@ -184,21 +194,25 @@ function openChoices(anchor,options,value,change) {
   popup.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest'});
 }
 $('choice-search').oninput=drawChoices;
-app.setThemeControl=()=>labelChoice($('b-theme'),state.themes.find(t=>t.id===state.settings.theme)?.name||'Theme');
+app.setThemeControl=()=>{
+  const name=state.themes.find(t=>t.id===state.settings.theme)?.name||'Theme';
+  const arrow=document.createElement('span');arrow.className='select-arrow';arrow.textContent='▾';arrow.setAttribute('aria-hidden','true');
+  $('b-theme').replaceChildren(arrow);$('b-theme').title='Theme: '+name;$('b-theme').setAttribute('aria-label','Theme: '+name);
+};
 app.chooseTheme=()=>openChoices($('b-theme'),state.themes.map(t=>({value:t.id,label:t.name})),state.settings.theme,value=>send({cmd:'setting',key:'theme',value}));
 
 const HELP = [
  {id:'start',title:'Getting started',paragraphs:[
   'Choose a folder in Explorer to browse your workspace. Select a file to read it; use Edit when you want to change its text.',
-  'The Files button shows or hides Explorer. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
+  'Move the pointer over the left side of the app bar to reveal Find, Files and the theme arrow. The Files button shows or hides Explorer. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
  ]},
  {id:'tabs',title:'Files & tabs',paragraphs:[
   'Right-click a file and choose Open in new tab, or middle-click it. An already-open file switches to its existing tab. New notes and files chosen from the Open dialog also get their own tabs.',
-  'Each tab keeps its draft, editing mode, selection and scroll position. Close a tab with its × button or Ctrl+W. Modified tabs ask you to Save, Discard or Cancel.',
+  'A single document shows a quiet title in the app bar. Open another document to reveal tabs. Each tab keeps its draft, editing mode, selection and scroll position. Close a tab with its × button or Ctrl+W. Modified tabs ask you to Save, Discard or Cancel.',
   'Right-click a tab to close it, keep only that tab, or copy its full path. Right-click a file or folder for path-copying and file-manager actions.'
  ]},
  {id:'editing',title:'Writing & saving',paragraphs:[
-  'Edit switches between writing and reading. Save writes the current tab; Save a copy lets you choose another filename. A dot on a tab marks unsaved changes.',
+  'Edit document in the main menu, or Ctrl+E, switches between writing and reading. Save writes the current tab; Save a copy lets you choose another filename. A dot on a tab marks unsaved changes.',
   'If the file changed on disk, the app asks before overwriting it. Reload from the main menu reads the file again after checking your unsaved edits.',
   'Find works in both the reader and editor. Fonts, wrapping, tab width, line spacing and zoom are available in Options.'
  ]},
@@ -231,17 +245,18 @@ app.help=open=>{
   $('help-overlay').classList.toggle('show',open);
   for(const id of ['bar','row','find'])$(id).inert=open;
   if(open){$('help-logo').src=state.logoUrl||'';$('help-title').textContent=state.name;$('help-version').textContent='Version '+state.version+' · Help & shortcuts';$('help-github').href=state.githubUrl||'#';$('help-search').value='';app.drawHelp();$('help-search').focus();}
-  else if(helpFocus?.isConnected&&helpFocus.offsetParent)helpFocus.focus();else $('brand').focus();
+  else if(helpFocus?.isConnected&&helpFocus.offsetParent)helpFocus.focus();else $('b-menu').focus();
 };
 $('help-search').oninput=()=>app.drawHelp();
 $('help-close').onclick=$('help-done').onclick=()=>app.help(false);
 $('help-overlay').onclick=e=>{if(e.target===$('help-overlay'))app.help(false);};
 $('help-github').onclick=e=>{e.preventDefault();if(state.githubUrl)send({cmd:'external',url:state.githubUrl});};
-$('brand').onclick=$('footer-brand').onclick=()=>app.help(true);
+$('footer-brand').onclick=()=>app.help(true);
 const originalOptions=app.options;
 app.options=open=>{closeChoices(false);closeMenu(false);if(open&&$('help-overlay').classList.contains('show'))app.help(false);originalOptions(open);};
 
 function mainMenu(){showMenu($('b-menu'),[
+ {label:state.name||'BS Notepad',brand:true,hint:'Help · F1',action:()=>app.help(true)},null,
  {label:'New note',symbol:'+',hint:'Ctrl+N',action:()=>$('b-new').click()},
  {label:'Browse for a file…',symbol:'↗',hint:'Ctrl+O',action:()=>$('b-open').click()},
  {label:'Choose a workspace folder…',action:()=>$('folder-open').click()},null,
@@ -249,10 +264,12 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:'Save a copy…',hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
  {label:'Read again from disk',symbol:'↻',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
  {label:'Close this tab',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},null,
+ {label:state.editing?'Read document':'Edit document',hint:'Ctrl+E',action:()=>$('b-edit').click()},
+ {label:state.settings.view_mode==='source'?'Rendered view':'Source view',hint:'Ctrl+U',action:()=>$('b-view').click()},
  {label:'Document map',symbol:state.settings.minimap?'✓':'',action:()=>$('b-map').click()},
  {label:'Wrap long lines',symbol:state.settings.word_wrap?'✓':'',action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},
  {label:'Options…',hint:'Ctrl+,',action:()=>app.options(true)},
- {label:'Help & shortcuts',hint:'F1',action:()=>app.help(true)},null,
+ null,
  {label:'Quit '+(state.name||'BS Notepad'),hint:'Ctrl+Q',action:()=>send({cmd:'quit'})}
 ]);}
 $('b-menu').onclick=mainMenu;

@@ -21,8 +21,6 @@ button { -webkit-tap-highlight-color:transparent; }
 svg.ui-icon { width:16px; height:16px; flex:0 0 16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
 #hot { position:absolute; top:0; left:0; right:0; height:6px; z-index:5; }
 #bar { min-height:48px; display:flex; align-items:center; gap:5px; padding:7px 12px; background:var(--bar); border-bottom:1px solid var(--rule); }
-#brand { display:flex; align-items:center; gap:9px; margin-right:12px; font-size:13px; font-weight:650; white-space:nowrap; }
-#brand svg { width:26px; height:26px; }
 #bar button,#bar select { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:32px; padding:5px 9px; color:var(--fg); background:transparent; border:1px solid transparent; border-radius:5px; white-space:nowrap; }
 #bar button:hover,#bar select:hover { background:var(--hover); }
 #bar button.on { background:var(--selected); }
@@ -116,9 +114,6 @@ body.autoside #side.show,body.autoside #side:focus-within { transform:none; }
 #document-actions button { display:flex; align-items:center; gap:6px; background:transparent; color:var(--dim); border:1px solid transparent; border-radius:4px; padding:4px 8px; font-size:12px; }
 #document-actions button:hover { background:var(--hover); color:var(--fg); }
 #document-actions button.on { background:var(--hover); color:var(--fg); border-color:var(--rule); }
-#document-path { display:flex; align-items:center; gap:6px; min-height:27px; padding:4px 18px; color:var(--dim); font-size:11px; border-bottom:1px solid color-mix(in srgb,var(--rule) 40%,transparent); user-select:text; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-#document-path .crumb { overflow:hidden; text-overflow:ellipsis; }
-#document-path .crumb-separator { color:var(--dim); opacity:.5; }
 #doc { flex:1; overflow:auto; }
 article { width:100%; padding:24px 32px; font:calc(var(--body-size) * var(--zoom))/var(--line) var(--body-font); }
 article a { color:var(--link); }
@@ -173,11 +168,7 @@ article pre:hover .copy,.copy:focus-visible { opacity:1; }
 body { border:1px solid var(--rule); border-radius:10px; overflow:hidden; }
 body.maximized { border-radius:0; }
 body.auto.popup-open #bar { transform:none; }
-#bar #brand #app-name { display:inline!important; }
 #bar { min-height:42px; padding:4px 4px 4px 8px; gap:3px; }
-#bar #brand { padding:3px 7px; margin-right:4px; border:0; gap:7px; }
-#brand:hover #app-name { text-decoration:underline; text-underline-offset:4px; }
-#brand svg { width:24px; height:24px; }
 #bar #b-new,#bar #b-open,#bar #b-saveas,#bar #zoom-group,#bar #b-pin { display:none!important; }
 #bar .sp { margin:0 3px; }
 #bar .toolbar-end { margin-left:0; }
@@ -260,34 +251,53 @@ body.auto.popup-open #bar { transform:none; }
 body.maximized #resize-edges { display:none; }
 @media (max-width:900px) { #bar #b-theme { display:none!important; } #brand span { display:inline!important; } #bar #b-opts .button-label,#bar #b-find .button-label { display:none; } }
 @media (max-width:720px) { #brand #app-name { font-size:12px; } #bar #b-save .button-label { display:none; } #bar .sp { display:none; } #bar #b-side { padding:5px; } #minimap { width:72px; flex-basis:72px; } #pfoot .grow { display:none; } #pfoot #footer-brand { margin-right:auto; } #help-nav { width:130px; flex-basis:130px; } #help-head { padding:12px 16px; } }
+
+/* Keep document controls quiet without moving their hover targets. */
+#bar { gap:5px; }
+#left-tools { display:flex; align-items:center; gap:2px; flex:0 0 auto; }
+#bar #left-tools .hover-action { opacity:0; transition:opacity .12s ease; }
+#bar #left-tools .hover-action:hover,
+#bar #left-tools .hover-action:focus-visible,
+#bar #left-tools .hover-action[aria-expanded=true] { opacity:1; }
+#bar #left-tools #b-theme { display:inline-flex!important; width:26px; min-width:26px; max-width:26px; padding:4px; }
+#b-theme .select-arrow { font-size:16px; }
+#bar #b-find { width:30px; padding:5px; }
+#bar #b-map { color:var(--accent); border:1px solid var(--accent); margin-left:4px; }
+#bar #b-map.on { background:var(--accent); color:var(--bg); }
+#bar #b-map .ui-icon { stroke-width:1.9; }
+#bar #drag-region { display:flex; align-items:center; min-width:0; padding-left:10px; overflow:hidden; }
+#single-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; color:var(--dim); font-size:12px; font-weight:400; }
+#doc,#editor textarea { scrollbar-width:none; -ms-overflow-style:none; }
+#doc::-webkit-scrollbar,#editor textarea::-webkit-scrollbar { width:0; height:0; display:none; }
+.popup .menu-brand { font-weight:650; min-height:38px; }
+.popup .menu-brand .menu-hint { font-weight:400; }
+
+#bar #document-actions { flex:0 0 auto; margin-left:0; padding:0; border:0; gap:1px; }
+#bar #document-actions button { width:28px; min-height:28px; padding:5px; opacity:.35; background:transparent; border-color:transparent; color:var(--dim); }
+#bar #document-actions button:hover,#bar #document-actions button:focus-visible { opacity:.95; background:var(--hover); }
+#bar #document-actions .button-label { display:none; }
+#side .pane { scrollbar-width:thin; scrollbar-color:color-mix(in srgb,var(--fg) 16%,var(--panel)) var(--panel); }
+#side .pane:hover { scrollbar-color:color-mix(in srgb,var(--fg) 28%,var(--panel)) var(--panel); }
+#side .pane::-webkit-scrollbar { width:5px; height:5px; }
+#side .pane::-webkit-scrollbar-track { background:var(--panel); }
+#side .pane::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 16%,var(--panel)); border-radius:5px; }
+#side .pane:hover::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 28%,var(--panel)); }
 </style></head><body>
 
 <div id="hot"></div>
 <header id="bar" aria-label="Toolbar">
-  <button id="b-menu" class="icon-only" aria-label="Main menu" aria-haspopup="menu" title="Main menu (Alt+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-  <button id="brand" class="brand-help" title="Help &amp; about BS Notepad" aria-label="BS Notepad help"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="4" y="4" width="56" height="56" rx="9" fill="#223d58"/><path d="M13 10h32v44H13z" fill="#ddecf4"/><path d="M13 10h6v44h-6z" fill="#479bcd"/><path d="M24 21h15m-15 8h15m-15 8h15m-15 8h12" stroke="#738fa0" stroke-width="2"/><path d="m33 48 16-27 5 3-16 27-7 4z" fill="#f4b74d" stroke="#1c2c3e" stroke-width="2"/></svg><span id="app-name"></span></button>
-  <button id="b-side" aria-label="Files" aria-controls="side" aria-pressed="false" title="Show or hide the file tree (Ctrl+B)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M5.5 7h1M5.5 11h1M5.5 15h1"/></svg><span class="button-label">Files</span></button>
-  <span class="sp"></span>
-  <div class="toolbar-group">
-    <button id="b-new" aria-label="New note" title="New note (Ctrl+N)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 14h8M12 10v8"/></svg><span class="button-label">New</span></button>
-    <button id="b-open" aria-label="Open file" title="Open file (Ctrl+O)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2M3 9h18l-3 11H2z"/></svg><span class="button-label">Open</span></button>
-    <button id="b-save" aria-label="Save" title="Save (Ctrl+S)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span class="button-label">Save</span></button>
-    <button id="b-saveas" aria-label="Save as" title="Save a copy (Ctrl+Shift+S)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h12l3 3v4M7 3v6h8M3 3v18h8M14 18l6-6 3 3-6 6-4 1z"/></svg><span class="button-label">Save as</span></button>
-  </div>
-  <span class="sp"></span>
-  <button id="b-find" aria-label="Find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span class="button-label">Find</span></button>
-  <div id="drag-region" title="Drag to move · Double-click to maximize"></div>
-  <div class="toolbar-end">
-    <div class="toolbar-group" id="zoom-group">
-      <button id="b-zoomout" class="icon-only" aria-label="Zoom out" title="Zoom out (Ctrl+-)">−</button>
-      <button id="b-zoomreset" title="Reset zoom (Ctrl+0)">100%</button>
-      <button id="b-zoomin" class="icon-only" aria-label="Zoom in" title="Zoom in (Ctrl+=)">+</button>
-    </div>
+  <div id="left-tools">
+    <button id="b-menu" class="icon-only" aria-label="Main menu" aria-haspopup="menu" title="Main menu (Alt+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <button id="b-find" class="icon-only hover-action" aria-label="Find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+    <button id="b-side" class="hover-action" aria-label="Files" aria-controls="side" aria-pressed="false" title="Show or hide the file tree (Ctrl+B)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M5.5 7h1M5.5 11h1M5.5 15h1"/></svg><span class="button-label">Files</span></button>
+    <button id="b-theme" class="icon-only hover-action" aria-label="Theme" aria-haspopup="listbox" aria-expanded="false" title="Theme"></button>
     <button id="b-map" class="icon-only" aria-label="Document map" aria-pressed="false" title="Show or hide document map"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v18M18 6h1M18 9h1M18 12h1M18 15h1"/></svg></button>
-    <button id="b-theme" class="select-control" aria-label="Theme" aria-haspopup="listbox" aria-expanded="false" title="Theme"></button>
-    <button id="b-opts" aria-label="Options" title="Options (Ctrl+,)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/></svg><span class="button-label">Options</span></button>
-    <button id="b-pin" class="icon-only" aria-label="Toggle toolbar reveal" title="Keep this bar visible"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4zM12 15v7"/></svg></button>
   </div>
+  <div id="drag-region" title="Drag to move · Double-click to maximize"><span id="single-title"></span></div>
+  <div id="document-actions">
+        <button id="b-view" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
+        <button id="b-edit" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
+      </div>
   <div id="window-controls">
     <button id="window-min" aria-label="Minimize" title="Minimize">−</button>
     <button id="window-max" aria-label="Maximize" title="Maximize">□</button>
@@ -295,6 +305,17 @@ body.maximized #resize-edges { display:none; }
   </div>
   <span id="note" role="status" aria-live="polite"></span>
 </header>
+<div id="command-bank" hidden>
+  <button id="b-new" aria-label="New note" title="New note (Ctrl+N)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 14h8M12 10v8"/></svg><span class="button-label">New</span></button>
+  <button id="b-open" aria-label="Open file" title="Open file (Ctrl+O)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2M3 9h18l-3 11H2z"/></svg><span class="button-label">Open</span></button>
+  <button id="b-save" aria-label="Save" title="Save (Ctrl+S)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span class="button-label">Save</span></button>
+  <button id="b-saveas" aria-label="Save as" title="Save a copy (Ctrl+Shift+S)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h12l3 3v4M7 3v6h8M3 3v18h8M14 18l6-6 3 3-6 6-4 1z"/></svg><span class="button-label">Save as</span></button>
+  <button id="b-zoomout" class="icon-only" aria-label="Zoom out" title="Zoom out (Ctrl+-)">−</button>
+  <button id="b-zoomreset" title="Reset zoom (Ctrl+0)">100%</button>
+  <button id="b-zoomin" class="icon-only" aria-label="Zoom in" title="Zoom in (Ctrl+=)">+</button>
+  <button id="b-opts" aria-label="Options" title="Options (Ctrl+,)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/></svg><span class="button-label">Options</span></button>
+  <button id="b-pin" class="icon-only" aria-label="Toggle toolbar reveal" title="Keep this bar visible"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4zM12 15v7"/></svg></button>
+</div>
 <div id="peek">&#9662;</div>
 
 <div id="find">
@@ -333,12 +354,8 @@ body.maximized #resize-edges { display:none; }
     <div id="document-head">
       <div id="document-tabs" role="tablist" aria-label="Open documents"></div>
       <button id="tab-new" aria-label="New tab" title="New tab (Ctrl+T)">+</button>
-      <div id="document-actions">
-        <button id="b-view" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
-        <button id="b-edit" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
-      </div>
+
     </div>
-    <div id="document-path" title="Document location"></div>
     <div id="content-row" role="tabpanel"><div id="content-main">
     <div id="fm"></div>
     <div id="doc"><article id="article"></article></div>
@@ -511,7 +528,7 @@ let activeGroup = "Appearance";
 const app = {
   init(s) {
     state.name = s.name; state.version = s.version; state.logoUrl = s.logoUrl; state.githubUrl = s.githubUrl; state.trayAvailable = s.trayAvailable;
-    document.title = s.name; $("app-name").textContent = s.name;
+    document.title = s.name;
     $("options-title").textContent = "Options";
     $("footer-brand").textContent = s.name + " · " + s.version;
     $("pnote").textContent = "Changes save automatically.";
@@ -566,6 +583,8 @@ const app = {
     $("b-zoomreset").textContent = Math.round(s.zoom * 100) + "%";
     $("b-pin").classList.toggle("on", s.chrome === "always");
     $("b-view").classList.toggle("on", s.view_mode === "source");
+    $("b-view").setAttribute("aria-label",s.view_mode === "source" ? "Rendered view" : "Source view");
+    $("b-view").setAttribute("aria-pressed",String(s.view_mode === "source"));
     for (const b of document.querySelectorAll("#tabs button[data-pane]"))
       b.classList.toggle("on", b.dataset.pane === s.sidebar_tab);
     for (const p of ["files","outline","recent"])
@@ -576,7 +595,6 @@ const app = {
   setDocument(d) {
     $("article").innerHTML = d.html;
     state.path = d.path || "";
-    app.breadcrumbs();
     app.note(d.note || "");
     $("fm").textContent = d.frontMatter || "";
     $("fm").classList.toggle("show", !!d.frontMatter);
@@ -595,18 +613,6 @@ const app = {
     $("b-save").classList.toggle("on", d);
     $("b-save").setAttribute("aria-label", d ? "Save unsaved changes" : "Save");
     app.updateTabDirty?.(d);
-  },
-  breadcrumbs() {
-    const path = normalizedPath(state.path || "");
-    const root = normalizedPath(state.workspace || "").replace(/\/$/,'');
-    const relative = root && path.startsWith(root + '/') ? path.slice(root.length+1) : path;
-    const parts = relative ? relative.split('/').filter(Boolean) : ["Unsaved note"];
-    if(root && path.startsWith(root + '/')) parts.unshift(root.split('/').pop() || root);
-    const bar=$("document-path"); bar.replaceChildren();bar.title=state.path || "Save this note to choose a location";
-    for(const [i,part] of parts.entries()) {
-      if(i) { const sep=document.createElement('span');sep.className='crumb-separator';sep.textContent='›';sep.setAttribute('aria-hidden','true');bar.appendChild(sep); }
-      const text=document.createElement('span');text.className='crumb';text.textContent=part;bar.appendChild(text);
-    }
   },
   outline(list) {
     const pane = $("pane-outline"); pane.innerHTML = "";
@@ -628,7 +634,6 @@ const app = {
     state.workspace = d.dir;
     $("root-icon").replaceChildren(fileIcon(d.dir.split(/[\\/]/).pop() || "Folder",true,true));
     $("folder-path").textContent = d.dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || d.dir;
-    app.breadcrumbs();
     $("folder-path").title = d.dir;
     $("folder-up").disabled = !d.parent;
     $("pane-files").replaceChildren(app.entries(d.entries || []));
@@ -735,6 +740,8 @@ const app = {
     $("editor").classList.toggle("show", on);
     $("doc").style.display = on ? "none" : "";
     $("b-edit").classList.toggle("on", on);
+    $("b-edit").setAttribute("aria-label",on ? "Read document" : "Edit document");
+    $("b-edit").setAttribute("aria-pressed",String(on));
     setCommand("b-edit",on ? "preview" : "edit",on ? "Preview" : "Edit");
     $("fm").hidden = on;
     if (on) $("text").focus();
