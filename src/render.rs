@@ -92,8 +92,32 @@ impl Renderer {
         }
     }
 
-    fn code_theme(&self, theme: &Theme) -> &CodeTheme {
-        self.themes.get(crate::theme::code_theme_name(&theme.id))
+    fn code_theme(&self, theme: &Theme) -> std::borrow::Cow<'_, CodeTheme> {
+        let base = self.themes.get(crate::theme::code_theme_name(&theme.id));
+        if !matches!(theme.id.as_str(), "mist" | "sage" | "slate" | "graphite") {
+            return std::borrow::Cow::Borrowed(base);
+        }
+        let colour = |hex: &str| syntect::highlighting::Color {
+            r: u8::from_str_radix(&hex[1..3], 16).unwrap_or(0),
+            g: u8::from_str_radix(&hex[3..5], 16).unwrap_or(0),
+            b: u8::from_str_radix(&hex[5..7], 16).unwrap_or(0),
+            a: 255,
+        };
+        let mut adjusted = base.clone();
+        adjusted.settings.background = Some(colour(&theme.panel));
+        adjusted.settings.foreground =
+            Some(colour(&crate::theme::guard(&theme.fg, &theme.panel, 4.5)));
+        for scope in &mut adjusted.scopes {
+            if let Some(fg) = scope.style.foreground {
+                let hex = format!("#{:02x}{:02x}{:02x}", fg.r, fg.g, fg.b);
+                scope.style.foreground =
+                    Some(colour(&crate::theme::guard(&hex, &theme.panel, 4.5)));
+            }
+            if scope.style.background.is_some() {
+                scope.style.background = Some(colour(&theme.panel));
+            }
+        }
+        std::borrow::Cow::Owned(adjusted)
     }
 
     /// Language for a file the tree opened directly, falling back to the file
@@ -185,7 +209,7 @@ impl Renderer {
             };
             let name = syntax.name.clone();
             return Document {
-                html: self.colour_with(text, syntax, code_theme, settings.syntax_colour),
+                html: self.colour_with(text, syntax, &code_theme, settings.syntax_colour),
                 outline: Vec::new(),
                 note: if settings.syntax_colour {
                     format!("text view - {}", name)
@@ -230,7 +254,7 @@ impl Renderer {
                 }
                 Event::End(TagEnd::CodeBlock) => {
                     let name = language.take().unwrap_or_default();
-                    let block = self.highlight(&code, &name, code_theme, colour);
+                    let block = self.highlight(&code, &name, &code_theme, colour);
                     events.push(Event::Html(block.into()));
                 }
 

@@ -134,3 +134,56 @@ fn icons_have_transparency_and_visible_pixels() {
         assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
     }
 }
+
+#[test]
+fn medium_themes_keep_readable_text_and_toned_code_panels() {
+    let renderer = Renderer::new();
+    for id in ["mist", "sage", "slate", "graphite"] {
+        let theme = theme::find(id);
+        assert_eq!(theme.id, id);
+        assert!(
+            theme::contrast(&theme.fg, &theme.bg) >= 4.5,
+            "{} body text",
+            id
+        );
+        assert!(
+            theme::contrast(&theme.dim, &theme.panel) >= 4.5,
+            "{} secondary text",
+            id
+        );
+        let doc = renderer.render(
+            Some(Path::new("sample.rs")),
+            "// A comment\nfn main() { let message = \"Hello\"; println!(\"{}\", message); }",
+            &Settings::default(),
+            &theme,
+        );
+        assert!(
+            doc.html
+                .contains(&format!("background-color:{}", theme.panel)),
+            "{} code background",
+            id
+        );
+        let mut colours = 0;
+        for fragment in doc.html.split("style=\"").skip(1) {
+            let style = fragment.split('"').next().unwrap();
+            for property in style.split(';') {
+                if let Some(fg) = property.strip_prefix("color:") {
+                    assert!(
+                        theme::contrast(fg, &theme.panel) >= 4.5,
+                        "{} token {}",
+                        id,
+                        fg
+                    );
+                    colours += 1;
+                }
+            }
+        }
+        assert!(colours > 0);
+    }
+}
+#[test]
+fn contrast_guard_chooses_readable_text_on_middle_gray() {
+    let background = "#888888";
+    let foreground = theme::guard("#999999", background, 4.5);
+    assert!(theme::contrast(&foreground, background) >= 4.5);
+}

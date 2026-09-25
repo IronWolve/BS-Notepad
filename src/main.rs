@@ -93,7 +93,7 @@ impl App {
         let mut t = theme::find(&self.settings.theme);
         // Nothing may end up unreadable, whatever the combination.
         t.fg = theme::guard(&t.fg, &t.bg, 4.5);
-        t.dim = theme::guard(&t.dim, &t.panel, 3.0);
+        t.dim = theme::guard(&t.dim, &t.panel, 4.5);
         t.link = theme::guard(&t.link, &t.bg, 4.5);
         t
     }

@@ -37,8 +37,16 @@ pub fn builtin() -> Vec<Theme> {
     vec![
         t("light", "Light", false, "#ffffff", "#24292f", "#f6f8fa", "#f0f3f6",
           "#d0d7de", "#0969da", "#6e7781", "#0969da", "Github"),
-        t("dark", "Dark", true, "#2b303b", "#c0c5ce", "#232830", "#1f242c",
-          "#4f5b66", "#8fa1b3", "#7a8593", "#8fa1b3", "Base16OceanDark"),
+        t("mist", "Mist", false, "#c8cfd7", "#283541", "#b9c3ce", "#adb9c6",
+          "#8c9aaa", "#215581", "#3b4b5b", "#276694", "Github"),
+        t("sage", "Sage", false, "#becbc3", "#293b33", "#afc0b5", "#a1b7a9",
+          "#869d8f", "#285d46", "#354d3e", "#2b6c50", "Github"),
+        t("slate", "Slate", true, "#536273", "#f2f5f8", "#475768", "#3e4e60",
+          "#748699", "#c0e5ff", "#d1dce7", "#9dd7ff", "Nord"),
+        t("graphite", "Graphite", true, "#57595d", "#f5f5f5", "#4a4c50", "#414347",
+          "#7a7d82", "#c4dff5", "#d5d7db", "#acd2f0", "Base16OceanDark"),
+        t("dark", "Dark", true, "#1f1f1f", "#d7d7d7", "#181818", "#252526",
+          "#343434", "#75beff", "#a5a5a5", "#3794ff", "Base16OceanDark"),
         t("dracula", "Dracula", true, "#282a36", "#f8f8f2", "#21222c", "#191a21",
           "#44475a", "#bd93f9", "#6272a4", "#ff79c6", "Dracula"),
         t("solarized-dark", "Solarized Dark", true, "#002b36", "#93a1a1", "#073642",
@@ -101,7 +109,7 @@ pub fn guard(fg: &str, bg: &str, target: f64) -> String {
         return fg.to_string();
     }
     let h = fg.trim_start_matches('#');
-    let toward_light = luminance(bg) < 0.5;
+    let toward_light = contrast("#ffffff", bg) >= contrast("#000000", bg);
     let mut rgb: Vec<f64> = (0..3).map(|i| channel(h, i * 2) * 255.0).collect();
     for _ in 0..40 {
         for c in rgb.iter_mut() {
