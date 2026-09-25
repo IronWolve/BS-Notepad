@@ -20,7 +20,7 @@ button { -webkit-tap-highlight-color:transparent; }
 [hidden] { display:none!important; }
 svg.ui-icon { width:16px; height:16px; flex:0 0 16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
 #hot { position:absolute; top:0; left:0; right:0; height:6px; z-index:5; }
-#bar { min-height:48px; display:flex; align-items:center; gap:5px; padding:7px 12px; background:var(--bar); border-bottom:1px solid var(--rule); }
+#bar { min-height:48px; display:flex; align-items:center; gap:5px; padding:7px 12px; background:var(--bg); border-bottom:1px solid transparent; }
 #bar button,#bar select { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:32px; padding:5px 9px; color:var(--fg); background:transparent; border:1px solid transparent; border-radius:5px; white-space:nowrap; }
 #bar button:hover,#bar select:hover { background:var(--hover); }
 #bar button.on { background:var(--selected); }
@@ -33,7 +33,7 @@ svg.ui-icon { width:16px; height:16px; flex:0 0 16px; fill:none; stroke:currentC
 #b-save.on::after { content:""; width:5px; height:5px; border-radius:50%; background:var(--accent); }
 body.auto #bar { position:absolute; top:0; left:0; right:0; z-index:10; transform:translateY(-100%); transition:transform .12s ease; }
 body.auto #bar.show,body.auto #bar:focus-within { transform:none; }
-#peek { display:none; position:absolute; top:0; left:50%; z-index:4; background:var(--bar); color:var(--dim); border:1px solid var(--rule); border-top:0; border-radius:0 0 5px 5px; padding:0 12px; }
+#peek { display:none; position:absolute; top:0; left:50%; z-index:4; background:var(--bg); color:var(--dim); border:1px solid var(--rule); border-top:0; border-radius:0 0 5px 5px; padding:0 12px; }
 body.auto #peek { display:block; }
 #note { position:fixed; right:18px; bottom:18px; max-width:min(600px,90vw); padding:12px 16px; background:var(--panel); border:1px solid var(--rule); border-radius:6px; z-index:40; white-space:pre-wrap; box-shadow:0 6px 24px #0003; user-select:text; }
 #note:empty { display:none; }
@@ -252,19 +252,12 @@ body.maximized #resize-edges { display:none; }
 @media (max-width:900px) { #bar #b-theme { display:none!important; } #brand span { display:inline!important; } #bar #b-opts .button-label,#bar #b-find .button-label { display:none; } }
 @media (max-width:720px) { #brand #app-name { font-size:12px; } #bar #b-save .button-label { display:none; } #bar .sp { display:none; } #bar #b-side { padding:5px; } #minimap { width:72px; flex-basis:72px; } #pfoot .grow { display:none; } #pfoot #footer-brand { margin-right:auto; } #help-nav { width:130px; flex-basis:130px; } #help-head { padding:12px 16px; } }
 
-/* Keep document controls quiet without moving their hover targets. */
+/* Keep compact controls in stable positions and reveal them on interaction. */
 #bar { gap:5px; }
 #left-tools { display:flex; align-items:center; gap:2px; flex:0 0 auto; }
-#bar #left-tools .hover-action { opacity:0; transition:opacity .12s ease; }
-#bar #left-tools .hover-action:hover,
-#bar #left-tools .hover-action:focus-visible,
-#bar #left-tools .hover-action[aria-expanded=true] { opacity:1; }
-#bar #left-tools #b-theme { display:inline-flex!important; width:26px; min-width:26px; max-width:26px; padding:4px; }
+#bar #left-tools #b-theme { display:inline-flex!important; width:28px; min-width:28px; max-width:28px; padding:4px; }
 #b-theme .select-arrow { font-size:16px; }
-#bar #b-find { width:30px; padding:5px; }
-#bar #b-map { color:var(--accent); border:1px solid var(--accent); margin-left:4px; }
-#bar #b-map.on { background:var(--accent); color:var(--bg); }
-#bar #b-map .ui-icon { stroke-width:1.9; }
+#bar #b-find { width:28px; padding:5px; }
 #bar #drag-region { display:flex; align-items:center; min-width:0; padding-left:10px; overflow:hidden; }
 #single-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; color:var(--dim); font-size:12px; font-weight:400; }
 #doc,#editor textarea { scrollbar-width:none; -ms-overflow-style:none; }
@@ -282,23 +275,44 @@ body.maximized #resize-edges { display:none; }
 #side .pane::-webkit-scrollbar-track { background:var(--panel); }
 #side .pane::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 16%,var(--panel)); border-radius:5px; }
 #side .pane:hover::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 28%,var(--panel)); }
+
+#bar button.quiet-control,
+#bar #left-tools button.quiet-control,
+#bar #document-actions button.quiet-control,
+#bar #window-controls button.quiet-control {
+  width:28px; min-width:28px; min-height:28px; padding:5px;
+  opacity:.35; color:var(--dim); background:transparent; border:1px solid transparent;
+  box-shadow:none; transition:opacity .12s ease;
+}
+#bar button.quiet-control .ui-icon { stroke-width:1.5; }
+#bar button.quiet-control:hover,
+#bar #left-tools button.quiet-control:hover,
+#bar #document-actions button.quiet-control:hover,
+#bar #window-controls button.quiet-control:hover,
+#bar button.quiet-control:focus-visible,
+#bar #left-tools button.quiet-control:focus-visible,
+#bar #document-actions button.quiet-control:focus-visible,
+#bar #window-controls button.quiet-control:focus-visible,
+#bar #left-tools button.quiet-control[aria-expanded=true] {
+  opacity:.95; background:var(--hover);
+}
 </style></head><body>
 
 <div id="hot"></div>
 <header id="bar" aria-label="Toolbar">
   <div id="left-tools">
     <button id="b-menu" class="icon-only" aria-label="Main menu" aria-haspopup="menu" title="Main menu (Alt+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-    <button id="b-find" class="icon-only hover-action" aria-label="Find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
-    <button id="b-side" class="hover-action" aria-label="Files" aria-controls="side" aria-pressed="false" title="Show or hide the file tree (Ctrl+B)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M5.5 7h1M5.5 11h1M5.5 15h1"/></svg><span class="button-label">Files</span></button>
-    <button id="b-theme" class="icon-only hover-action" aria-label="Theme" aria-haspopup="listbox" aria-expanded="false" title="Theme"></button>
-    <button id="b-map" class="icon-only" aria-label="Document map" aria-pressed="false" title="Show or hide document map"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v18M18 6h1M18 9h1M18 12h1M18 15h1"/></svg></button>
+    <button id="b-side" class="icon-only quiet-control" aria-label="Files" aria-controls="side" aria-pressed="false" title="Show or hide the file tree (Ctrl+B)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M5.5 7h1M5.5 11h1M5.5 15h1"/></svg></button>
+    <button id="b-theme" class="icon-only quiet-control" aria-label="Theme" aria-haspopup="listbox" aria-expanded="false" title="Theme"></button>
   </div>
   <div id="drag-region" title="Drag to move · Double-click to maximize"><span id="single-title"></span></div>
   <div id="document-actions">
-        <button id="b-view" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
-        <button id="b-edit" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
+    <button id="b-find" class="icon-only quiet-control" aria-label="Find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+        <button id="b-view" class="quiet-control" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
+        <button id="b-edit" class="quiet-control" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
       </div>
   <div id="window-controls">
+    <button id="b-map" class="icon-only quiet-control" aria-label="Document map" aria-pressed="false" title="Show or hide document map"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v18M18 6h1M18 9h1M18 12h1M18 15h1"/></svg></button>
     <button id="window-min" aria-label="Minimize" title="Minimize">−</button>
     <button id="window-max" aria-label="Maximize" title="Maximize">□</button>
     <button id="window-close" aria-label="Close window" title="Close window">×</button>
