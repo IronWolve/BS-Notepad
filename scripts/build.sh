@@ -52,13 +52,35 @@ if [ "$INSTALL" = --install ]; then
       cp -p "$WIN_DEST/$file" "$ARCHIVE/$file"
     fi
   done
+  install_file() {
+    local source=$1 target=$2 filename stage held
+    cmp -s "$source" "$target" && return 0
+    filename=$(basename "$target")
+    stage="$WIN_DEST/.$filename.install-$$"
+    held="$ARCHIVE/in-use-$filename"
+    [ ! -e "$stage" ] && [ ! -e "$held" ] || { echo "Update staging path already exists"; return 1; }
+    cp "$source" "$stage" || return 1
+    if mv -f "$stage" "$target" 2>/dev/null; then return 0; fi
+    # Windows can deny replacement of a running image while allowing it to
+    # be renamed. Preserve that image without stopping its process.
+    if [ -f "$target" ] && mkdir -p "$ARCHIVE" && mv "$target" "$held"; then
+      if mv "$stage" "$target"; then
+        row "running copy kept" "$held"
+        return 0
+      fi
+      mv "$held" "$target" || echo "Restore the previous file from $held"
+    fi
+    rm -f "$stage"
+    echo "Could not replace $target. Close the app before retrying."
+    return 1
+  }
   for file in "$BIN.exe" WebView2Loader.dll installed.json register-file-types.ps1; do
-    cp "$ROOT/deploy/windows/$file" "$WIN_DEST/$file"
+    install_file "$ROOT/deploy/windows/$file" "$WIN_DEST/$file"
   done
   # Keep existing shortcuts current after the executable rename. The old
   # contents were archived above, along with the other installation files.
   if [ "$BIN" != notepad ] && [ -f "$WIN_DEST/notepad.exe" ]; then
-    if cp "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/notepad.exe"; then
+    if install_file "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/notepad.exe"; then
       row "legacy shortcut" "notepad.exe now runs $BIN $VER"
     else
       row "legacy shortcut" "Could not update notepad.exe; close the old app and use $BIN.exe."

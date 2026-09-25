@@ -1,6 +1,6 @@
 [package]
 name = "bs-notepad"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2021"
 homepage = "https://github.com/IronWolve"
 

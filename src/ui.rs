@@ -195,7 +195,7 @@ body.auto.popup-open #bar { transform:none; }
 #content-row { display:flex; flex:1; min-height:0; }
 #content-main { flex:1; min-width:0; display:flex; flex-direction:column; }
 #editor textarea { width:100%; height:100%; resize:none; border:0; outline:0; background:var(--bg); color:var(--fg); padding:20px 28px; font-family:var(--code-font); font-size:calc(var(--code-size) * var(--zoom)); line-height:var(--line); tab-size:4; }
-#minimap { flex:0 0 108px; width:108px; position:relative; background:var(--panel); border-left:1px solid var(--rule); overflow:hidden; cursor:pointer; touch-action:none; user-select:none; }
+#minimap { flex:0 0 108px; width:108px; margin-top:12px; position:relative; background:var(--panel); border-left:1px solid var(--rule); overflow:hidden; cursor:pointer; touch-action:none; user-select:none; }
 #map-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 #map-viewport { position:absolute; left:3px; right:3px; min-height:12px; background:color-mix(in srgb,var(--accent) 12%,transparent); border:1px solid color-mix(in srgb,var(--accent) 65%,transparent); border-radius:4px; cursor:grab; }
 #map-viewport:active { cursor:grabbing; }
