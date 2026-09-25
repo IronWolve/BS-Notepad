@@ -306,7 +306,7 @@ const HELP = [
   'Use the Document map button in the toolbar, the main menu, or Options → Editor to show or hide it. With the map focused, arrow keys and Page Up / Page Down scroll the document.'
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
-  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover eight saturated colors, including yellow, orange, pink and purple. Use the Bold, Soft and Classic filters to browse the collections. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
+  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover bright colors and deeper shades, including amber, burgundy, plum, forest green and deep teal. Use the Bold, Soft and Classic filters to browse the collections. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
   'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
