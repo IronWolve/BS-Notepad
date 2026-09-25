@@ -15,6 +15,7 @@ pub struct Settings {
     pub tab_size: u32,
     pub close_to_tray: bool,
     pub theme: String,
+    pub text_contrast: u32,
     pub ui_font: String,
     pub body_font: String,
     pub code_font: String,
@@ -58,6 +59,7 @@ impl Default for Settings {
             tab_size: 4,
             close_to_tray: false,
             theme: "dark".into(),
+            text_contrast: 0,
             // Generic stacks: the machine may not have any particular family,
             // and a missing font must degrade rather than break.
             ui_font: "system-ui, -apple-system, Segoe UI, sans-serif".into(),
@@ -108,6 +110,7 @@ impl Settings {
 
     pub fn normalize(&mut self) {
         self.theme = crate::theme::find(&self.theme).id;
+        self.text_contrast = self.text_contrast.min(100);
         self.ui_size = self.ui_size.clamp(10, 28);
         self.body_size = self.body_size.clamp(10, 48);
         self.code_size = self.code_size.clamp(10, 40);

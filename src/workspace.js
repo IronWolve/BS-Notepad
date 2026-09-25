@@ -3,6 +3,7 @@ const editorNodes = new Map(), pendingViews = new Map();
 let mapTimer, mapFrame, mapHeight = 0, helpFocus, selectedHelp = 'start';
 let menuOrigin, choiceOrigin, choiceOptions = [], choiceValue, choiceChange, choicePreview, choiceTheme=false;
 let themePreviewTimer, themePreviewToken=0, readerFrame, dialogFrame;
+let zoomTarget=null, zoomTimer=null, wheelRemainder=0, lastZoomWheel=0;
 const cleanPath = path => normalizedPath(path || '');
 const fileName = path => cleanPath(path).split('/').pop() || 'Untitled';
 
@@ -246,7 +247,7 @@ function drawChoices() {
 function openChoices(anchor,options,value,change,preview=null) {
   closeMenu(false);closeChoices(false);choiceOrigin=anchor;choiceOptions=options;choiceValue=value;choiceChange=change;choicePreview=preview;choiceTheme=!!preview;
   anchor.setAttribute('aria-expanded','true');$('choice-search').value='';$('choice-search').hidden=options.length<(choiceTheme?19:9);$('choice-hint').hidden=!choiceTheme;
-  const popup=$('choice-popup');popup.style.width=Math.max(choiceTheme?250:220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popup.hidden=false;
+  const popup=$('choice-popup');popup.classList.toggle('theme-grid',choiceTheme);popup.style.width=Math.max(choiceTheme?440:220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popup.hidden=false;
   drawChoices();layoutChoices();syncPopupState();
   if(!$('choice-search').hidden)$('choice-search').focus();
   else (popup.querySelector('[aria-selected=true]') || popup.querySelector('button'))?.focus();
@@ -285,19 +286,19 @@ const HELP = [
  {id:'editing',title:'Writing & saving',paragraphs:[
   'Edit document in the main menu, or Ctrl+E, switches between writing and reading. Save writes the current tab; Save a copy lets you choose another filename. A dot on a tab marks unsaved changes.',
   'If the file changed on disk, the app asks before overwriting it. Reload from the main menu reads the file again after checking your unsaved edits.',
-  'Find works in both the reader and editor. Fonts, wrapping, tab width, line spacing and zoom are available in Options.'
+  'Find works in both the reader and editor. Click the Find icon or press Ctrl+F again to close it. Hold Ctrl while scrolling over the document to zoom, or use Ctrl+Plus and Ctrl+Minus. Ctrl+0 returns to 100%. Ordinary scrolling still moves through the document. Fonts, wrapping, tab width and line spacing are available in Options.'
  ]},
  {id:'map',title:'Document map',paragraphs:[
   'The map at the right is a small overview of your current document. Its outlined area shows the visible portion. Click or drag it to move through a long file.',
   'Use the Document map button in the toolbar, the main menu, or Options → Editor to show or hide it. With the map focused, arrow keys and Page Up / Page Down scroll the document.'
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
-  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Mist and Sage are softer light palettes; Slate and Graphite offer medium contrast.',
+  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Twelve additional color families range from Rose Stone and Jade to Ink and Marble. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
   'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
-  ['New tab','Ctrl+T / Ctrl+N'],['Open file','Ctrl+O'],['Open folder','Ctrl+Shift+O'],['Save','Ctrl+S'],['Save a copy','Ctrl+Shift+S'],['Close tab','Ctrl+W'],['Next / previous tab','Ctrl+Tab / Ctrl+Shift+Tab'],['Edit / preview','Ctrl+E'],['Find','Ctrl+F'],['Show / hide files','Ctrl+B'],['Reload file','F5'],['Options','Ctrl+,'],['Help','F1'],['Main menu','Alt+F'],['Quit','Ctrl+Q']
+  ['New tab','Ctrl+T / Ctrl+N'],['Open file','Ctrl+O'],['Open folder','Ctrl+Shift+O'],['Save','Ctrl+S'],['Save a copy','Ctrl+Shift+S'],['Close tab','Ctrl+W'],['Next / previous tab','Ctrl+Tab / Ctrl+Shift+Tab'],['Edit / preview','Ctrl+E'],['Find','Ctrl+F'],['Zoom in','Ctrl+Plus'],['Zoom out','Ctrl+Minus'],['Reset zoom','Ctrl+0'],['Mouse zoom','Ctrl+wheel'],['Show / hide files','Ctrl+B'],['Reload file','F5'],['Options','Ctrl+,'],['Help','F1'],['Main menu','Alt+F'],['Quit','Ctrl+Q']
  ]}
 ];
 app.drawHelp=()=>{
@@ -388,8 +389,41 @@ $('minimap').onpointermove=e=>{if(mapDrag){const target=scrollTarget(),rect=$('m
 $('minimap').onpointerup=$('minimap').onpointercancel=()=>{mapDrag=null;};
 $('map-viewport').onkeydown=e=>{const target=scrollTarget();let delta=0;if(e.key==='ArrowDown')delta=40;else if(e.key==='ArrowUp')delta=-40;else if(e.key==='PageDown')delta=target.clientHeight;else if(e.key==='PageUp')delta=-target.clientHeight;else if(e.key==='Home')target.scrollTop=0;else if(e.key==='End')target.scrollTop=target.scrollHeight;else return;e.preventDefault();target.scrollTop+=delta;app.mapPosition();};
 const originalScroll=$('doc').onscroll;$('doc').onscroll=e=>{originalScroll?.(e);app.mapPosition();};
+app.clearPendingZoom=()=>{clearTimeout(zoomTimer);zoomTimer=null;zoomTarget=null;wheelRemainder=0;};
+app.flushZoom=()=>{
+  if(zoomTimer===null||zoomTarget===null)return;
+  clearTimeout(zoomTimer);zoomTimer=null;
+  send({cmd:'setting',key:'zoom',value:zoomTarget});
+};
+app.setZoom=value=>{
+  if(!Number.isFinite(value))return;
+  const next=Math.round(Math.max(.5,Math.min(3,value))*100)/100;
+  if(Math.abs(next-(zoomTarget??state.settings.zoom??1))<.0001)return;
+  zoomTarget=next;clearTimeout(zoomTimer);
+  zoomTimer=setTimeout(app.flushZoom,120);
+  app.applySettings({...state.settings,zoom:next});
+};
+app.adjustZoom=step=>app.setZoom((Math.round((zoomTarget??state.settings.zoom??1)*100)+step*10)/100);
+function zoomBlocked(){return $('options').classList.contains('show')||$('help-overlay').classList.contains('show')||!$('menu-popup').hidden||!$('choice-popup').hidden;}
+document.addEventListener('wheel',event=>{
+  if(!event.ctrlKey&&!event.metaKey)return;
+  event.preventDefault();
+  if(event.altKey||zoomBlocked()||!(event.target instanceof Element)||!event.target.closest('#content-row')||!event.deltaY)return;
+  const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?scrollTarget().clientHeight:1),now=performance.now();
+  if(now-lastZoomWheel>180||Math.sign(delta)!==Math.sign(wheelRemainder))wheelRemainder=0;
+  lastZoomWheel=now;
+  if(Math.abs(delta)>=40){wheelRemainder=0;app.adjustZoom(delta<0?1:-1);return;}
+  wheelRemainder+=delta;
+  if(Math.abs(wheelRemainder)>=40){app.adjustZoom(wheelRemainder<0?1:-1);wheelRemainder=0;}
+},{passive:false});
 const originalSettings=app.applySettings;
-app.applySettings=settings=>{originalSettings(settings);app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
+app.applySettings=settings=>{
+ if(zoomTarget!==null){
+   if(zoomTimer===null&&Math.abs(settings.zoom-zoomTarget)<.0001)zoomTarget=null;
+   else settings={...settings,zoom:zoomTarget};
+ }
+ settings={...settings,zoom:Math.round(settings.zoom*100)/100};
+ originalSettings(settings);app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
 const originalTheme=app.applyTheme;app.applyTheme=theme=>{if(theme.id&&theme.id!==(state.previewTheme||state.settings.theme))return;originalTheme(theme);app.scheduleMap();};
 new ResizeObserver(()=>{app.scheduleMap();app.scheduleReaderLayout?.();closeChoices(false);closeMenu(false);}).observe($('content-row'));
 

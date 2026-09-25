@@ -19,6 +19,8 @@ pub struct Theme {
     /// Which colouring set the code blocks use.
     #[serde(skip)]
     pub code: String,
+    #[serde(skip)]
+    pub text_contrast: u32,
 }
 
 fn t(
@@ -29,12 +31,36 @@ fn t(
         id: id.into(), name: name.into(), dark,
         bg: bg.into(), fg: fg.into(), panel: panel.into(), bar: bar.into(),
         rule: rule.into(), link: link.into(), dim: dim.into(), accent: accent.into(),
-        code: code.into(),
+        code: code.into(), text_contrast: 0,
     }
 }
 
 pub fn builtin() -> Vec<Theme> {
     vec![
+        t("rose-stone", "Rose Stone", false, "#FFF7F7", "#4A1C1C", "#FFE4E4", "#FFF7F7",
+          "#FFD4D4", "#A03C3C", "#4A1C1C", "#A03C3C", "Github"),
+        t("warm-clay", "Warm Clay", false, "#F8E3C4", "#2C1810", "#E6C89B", "#F8E3C4",
+          "#D4B176", "#C85F3C", "#2C1810", "#C85F3C", "Github"),
+        t("cocoa", "Cocoa", false, "#EFEBE9", "#5D4037", "#D7CCC8", "#EFEBE9",
+          "#BCAAA4", "#795548", "#5D4037", "#795548", "Github"),
+        t("parchment", "Parchment", false, "#F4E4BE", "#5F4B32", "#E8D5AB", "#F4E4BE",
+          "#E2CCA0", "#A3682C", "#5F4B32", "#A3682C", "Github"),
+        t("jade", "Jade", false, "#E8F4EE", "#1D4A3C", "#DCEEE5", "#E8F4EE",
+          "#D5EAE0", "#388E70", "#1D4A3C", "#388E70", "Github"),
+        t("lagoon", "Lagoon", false, "#E6F3F4", "#2A5254", "#D4EBEC", "#E6F3F4",
+          "#C2E3E4", "#3C707A", "#2A5254", "#3C707A", "Github"),
+        t("porcelain", "Porcelain", false, "#F2F7FF", "#102349", "#D4E5FF", "#F2F7FF",
+          "#B9D7FF", "#1E3F66", "#102349", "#1E3F66", "Github"),
+        t("lavender-clay", "Lavender Clay", false, "#F4EEF5", "#442A47", "#E8DCEA", "#F4EEF5",
+          "#DBCBDE", "#8C5D91", "#442A47", "#8C5D91", "Github"),
+        t("blossom", "Blossom", false, "#FFEEF2", "#8C4356", "#FFE6EC", "#FFEEF2",
+          "#FFDEE6", "#E4707C", "#8C4356", "#E4707C", "Github"),
+        t("pewter", "Pewter", false, "#F3F4F6", "#1F2937", "#E5E7EB", "#F3F4F6",
+          "#D1D5DB", "#4B5563", "#1F2937", "#4B5563", "Github"),
+        t("ink", "Ink", true, "#1F2937", "#E5E7EB", "#4B5563", "#1F2937",
+          "#374151", "#4B5563", "#E5E7EB", "#4B5563", "Base16OceanDark"),
+        t("marble", "Marble", false, "#F7F6F2", "#2B2926", "#F2F0EB", "#F7F6F2",
+          "#EAE8E3", "#9A958E", "#2B2926", "#9A958E", "Github"),
         t("light", "Light", false, "#ffffff", "#24292f", "#f6f8fa", "#f0f3f6",
           "#d0d7de", "#0969da", "#6e7781", "#0969da", "Github"),
         t("mist", "Mist", false, "#c8cfd7", "#283541", "#b9c3ce", "#adb9c6",
@@ -121,4 +147,49 @@ pub fn guard(fg: &str, bg: &str, target: f64) -> String {
         }
     }
     if toward_light { "#ffffff".into() } else { "#000000".into() }
+}
+
+/// Increase text strength without altering the surface or quiet controls.
+pub fn strengthen(fg: &str, bg: &str, amount: u32) -> String {
+    if amount == 0 { return fg.into(); }
+    let end = if contrast("#ffffff", bg) >= contrast("#000000", bg) { 255.0 } else { 0.0 };
+    let h = fg.trim_start_matches('#');
+    let mix = amount.min(100) as f64 / 100.0;
+    let rgb: Vec<u8> = (0..3).map(|i| {
+        let c = channel(h, i * 2) * 255.0;
+        (c + (end - c) * mix).round() as u8
+    }).collect();
+    format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn contrast_control_preserves_default_and_increases_readability() {
+        for t in builtin() {
+            let fg = guard(&t.fg, &t.bg, 4.5);
+            assert_eq!(strengthen(&fg, &t.bg, 0), fg);
+            let mut previous = contrast(&fg, &t.bg);
+            for amount in [25, 50, 75, 100] {
+                let current = contrast(&strengthen(&fg, &t.bg, amount), &t.bg);
+                assert!(current >= previous, "{} at {}", t.id, amount);
+                previous = current;
+            }
+        }
+    }
+    #[test]
+    fn palette_ids_are_unique_and_survive_settings_normalization() {
+        let themes = builtin();
+        let ids: std::collections::HashSet<_> = themes.iter().map(|t| &t.id).collect();
+        assert_eq!(ids.len(), themes.len());
+        for t in themes {
+            let mut settings = crate::settings::Settings::default();
+            settings.theme = t.id.clone();
+            settings.text_contrast = 200;
+            settings.normalize();
+            assert_eq!(settings.theme, t.id);
+            assert_eq!(settings.text_contrast, 100);
+        }
+    }
 }

@@ -108,9 +108,10 @@ impl App {
                 .unwrap_or(&self.settings.theme),
         );
         // Nothing may end up unreadable, whatever the combination.
-        t.fg = theme::guard(&t.fg, &t.bg, 4.5);
+        t.text_contrast = self.settings.text_contrast;
+        t.fg = theme::strengthen(&theme::guard(&t.fg, &t.bg, 4.5), &t.bg, t.text_contrast);
         t.dim = theme::guard(&t.dim, &t.panel, 4.5);
-        t.link = theme::guard(&t.link, &t.bg, 4.5);
+        t.link = theme::strengthen(&theme::guard(&t.link, &t.bg, 4.5), &t.bg, t.text_contrast);
         t
     }
 
@@ -473,6 +474,7 @@ impl App {
             let rerender = matches!(
                 key,
                 "theme"
+                    | "text_contrast"
                     | "highlight_limit_kb"
                     | "plain_text_above_mb"
                     | "view_mode"
@@ -923,6 +925,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ipc_proxy = proxy.clone();
     let builder = WebViewBuilder::new()
         .with_html(ui::shell())
+        .with_hotkeys_zoom(false)
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 if let Some(path) = paths.first() {

@@ -338,6 +338,23 @@ article th,article td { overflow-wrap:normal; }
 #side .pane::-webkit-scrollbar-track,#sets::-webkit-scrollbar-track,#help-content::-webkit-scrollbar-track,#help-nav::-webkit-scrollbar-track,#rail::-webkit-scrollbar-track,#document-tabs::-webkit-scrollbar-track,#choice-list::-webkit-scrollbar-track,.popup::-webkit-scrollbar-track,#fm::-webkit-scrollbar-track,article pre::-webkit-scrollbar-track { background:transparent; }
 #side .pane::-webkit-scrollbar-thumb,#sets::-webkit-scrollbar-thumb,#help-content::-webkit-scrollbar-thumb,#help-nav::-webkit-scrollbar-thumb,#rail::-webkit-scrollbar-thumb,#document-tabs::-webkit-scrollbar-thumb,#choice-list::-webkit-scrollbar-thumb,.popup::-webkit-scrollbar-thumb,#fm::-webkit-scrollbar-thumb,article pre::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 26%,transparent); border-radius:8px; }
 #side .pane::-webkit-scrollbar-button,#sets::-webkit-scrollbar-button,#help-content::-webkit-scrollbar-button,#choice-list::-webkit-scrollbar-button,.popup::-webkit-scrollbar-button { display:none; width:0; height:0; }
+.contrast-control { display:flex; align-items:center; gap:10px; }
+.contrast-control input[type=range] { padding:0; accent-color:var(--accent); }
+.contrast-control output { min-width:36px; text-align:right; color:var(--dim); font-variant-numeric:tabular-nums; }
+#find { justify-content:flex-end; gap:5px; padding:6px 14px 9px; background:var(--bg); border:0; }
+.find-field { display:flex; align-items:center; gap:9px; width:min(480px,100%); min-width:0; padding:0 10px; border:1px solid color-mix(in srgb,var(--fg) 15%,var(--bg)); border-radius:9px; background:color-mix(in srgb,var(--panel) 45%,var(--bg)); }
+.find-field:focus-within { border-color:color-mix(in srgb,var(--accent) 55%,var(--bg)); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 9%,transparent); }
+.find-field > svg { flex-shrink:0; opacity:.45; }
+#find input { flex:1; min-width:40px; width:100%; padding:8px 0; border:0; outline:0; background:transparent; font:inherit; }
+#find input::placeholder { color:var(--dim); opacity:.7; }
+#hits { white-space:nowrap; color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
+#find button { display:flex; align-items:center; justify-content:center; flex:0 0 30px; height:30px; padding:6px; border-radius:7px; opacity:.5; }
+#find button:hover,#find button:focus-visible { opacity:1; background:color-mix(in srgb,var(--fg) 8%,transparent); }
+#find button:disabled { opacity:.2; cursor:default; background:transparent; }
+#bar #b-find[aria-pressed=true] { opacity:.8; }
+#choice-popup.theme-grid #choice-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; }
+#choice-popup.theme-grid #choice-list button { min-width:0; }
+@media(max-width:460px) { #choice-popup.theme-grid #choice-list { grid-template-columns:1fr; } }
 </style></head><body>
 
 <div id="hot"></div>
@@ -349,7 +366,7 @@ article th,article td { overflow-wrap:normal; }
   </div>
   <div id="drag-region" title="Drag to move · Double-click to maximize"><span id="single-title"></span></div>
   <div id="document-actions">
-    <button id="b-find" class="icon-only quiet-control" aria-label="Find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+    <button id="b-find" class="icon-only quiet-control" aria-label="Show or hide Find" aria-pressed="false" aria-controls="find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
         <button id="b-view" class="quiet-control" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
         <button id="b-edit" class="quiet-control" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
       </div>
@@ -374,12 +391,11 @@ article th,article td { overflow-wrap:normal; }
 </div>
 <div id="peek">&#9662;</div>
 
-<div id="find">
-  <input id="find-text" aria-label="Find in document" placeholder="Find in document" autocomplete="off">
-  <button id="find-prev">Previous</button>
-  <button id="find-next">Next</button>
-  <span id="hits"></span>
-  <button id="find-close">Close</button>
+<div id="find" role="search" aria-label="Find in document">
+  <div class="find-field"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="find-text" aria-label="Find in document" placeholder="Find in document…" autocomplete="off" spellcheck="false"><span id="hits" role="status" aria-live="polite"></span></div>
+  <button id="find-prev" aria-label="Previous match" title="Previous match (Shift+Enter)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button>
+  <button id="find-next" aria-label="Next match" title="Next match (Enter)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6 6 6-6"/></svg></button>
+  <button id="find-close" aria-label="Close Find" title="Close Find (Esc)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
 </div>
 
 <div id="row">
@@ -443,6 +459,7 @@ article th,article td { overflow-wrap:normal; }
 <script>
 const $ = id => document.getElementById(id);
 const send = o => {
+ if(o.cmd === "quit" || o.cmd === "closeWindow") app.flushZoom?.();
  const editor=$("text"), doc=$("doc");
  window.ipc.postMessage(JSON.stringify({...o,fromTab:state.activeTab,view:{editing:state.editing,scroll:doc.scrollTop/(doc.scrollHeight||1),editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0}}));
 };
@@ -544,7 +561,7 @@ let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"
 // Grouped so each screen is short. Remembered state - window size, last file,
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
-  Appearance: ["theme", "chrome", "zoom"],
+  Appearance: ["text_contrast", "theme", "chrome", "zoom"],
   Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "close_to_tray"],
   Editor: ["word_wrap", "tab_size", "minimap"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "body_size",
@@ -560,6 +577,7 @@ const CHOICES = {
 };
 const LABELS = {
  minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
+ text_contrast:["Text contrast","0 keeps the palette. 100 gives the strongest text: darker on light backgrounds, lighter on dark. Surfaces stay unchanged."],
  theme:["Color theme","Colors for the editor, reader and workspace."],
  chrome:["Toolbar","Keep controls visible or reveal them at the top edge."],
  sidebar:["Sidebar","Dock the browser, reveal it from the left edge, or hide it."],
@@ -572,12 +590,12 @@ const LABELS = {
  ui_font:["Interface font","Toolbar, file browser and options."], body_font:["Reading font","Rendered Markdown paragraphs and headings."], code_font:["Code font","Editor and code blocks; monospace fonts."],
  ui_size:["Interface size","Pixels."], body_size:["Reading size","Pixels before zoom."], code_size:["Code size","Pixels before zoom."],
  line_height:["Line spacing","Line height as a multiple of the font size."], ligatures:["Font ligatures","Allow the font to join character combinations."],
- zoom:["Document zoom","1 is 100%; Ctrl+0 resets it."], view_mode:["Reading mode","Rendered Markdown or syntax-colored source."],
+ zoom:["Document zoom","Ctrl+wheel or Ctrl+Plus/Minus changes zoom. Ctrl+0 returns to 100%."], view_mode:["Reading mode","Rendered Markdown or syntax-colored source."],
  syntax_colour:["Syntax highlighting","Color source files and fenced code blocks."],
  highlight_limit_kb:["Highlight limit","Skip syntax highlighting above this size in KB."],
  plain_text_above_mb:["Large file threshold","Show files above this size in MB as plain text."]
 };
-const RANGES = { ui_size:[10,28,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,100,1] };
+const RANGES = { text_contrast:[0,100,5], ui_size:[10,28,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,100,1] };
 const choiceLabel = x => ({always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
@@ -882,6 +900,15 @@ const app = {
         b.onclick = () => app.commitTheme(t.id);
         control.appendChild(b);
       }
+    } else if (key === "text_contrast") {
+      control = document.createElement("div"); control.className = "contrast-control";
+      const slider = document.createElement("input"); slider.type = "range";
+      slider.min = 0; slider.max = 100; slider.step = 5; slider.value = value;
+      slider.setAttribute("aria-labelledby", label.id);
+      const output = document.createElement("output"); output.textContent = value + "%";
+      slider.oninput = () => { output.textContent = slider.value + "%"; };
+      slider.onchange = () => send({cmd:"setting", key, value:Number(slider.value)});
+      control.append(slider, output);
     } else if (CHOICES[key]) {
       control = app.selectControl(CHOICES[key].map(choice => ({value:choice,label:choiceLabel(choice)})),value,
         next => send({cmd:"setting",key,value:next}), LABELS[key]?.[0] || key);
@@ -911,7 +938,8 @@ const app = {
       control.onchange = () => {
         let next = control.type === "checkbox" ? control.checked : control.value;
         if (typeof fallback === "number") { if (!control.value || !control.checkValidity()) return; next = Number(next); }
-        send({ cmd:"setting", key, value:next });
+        if(key === "zoom") app.setZoom(next);
+        else send({ cmd:"setting", key, value:next });
       };
     }
     row.appendChild(control);
@@ -921,7 +949,7 @@ const app = {
     reset.textContent = "\u21ba";
     reset.title = "Reset " + (LABELS[key]?.[0] || key);
     reset.setAttribute("aria-label", reset.title);
-    reset.onclick = () => send({ cmd:"setting", key, value:fallback });
+    reset.onclick = () => key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
     row.appendChild(reset);
     return row;
   },
@@ -934,6 +962,7 @@ let marks = [], at = -1, editorHits = [];
 function clearMarks() {
   for (const m of marks) { const p = m.parentNode; p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }
   marks = []; editorHits = []; at = -1; $("hits").textContent = "";
+  $("find-prev").disabled = $("find-next").disabled = true;
 }
 function runFind(text) {
   clearMarks();
@@ -957,10 +986,11 @@ function runFind(text) {
     }
     t.parentNode.replaceChild(frag, t);
   }
-  $("hits").textContent = marks.length ? "1 of " + marks.length : "no matches";
+  $("hits").textContent = marks.length ? "1 of " + marks.length : "No matches";
   if (marks.length) { at = 0; focusMark(); }
 }
 function focusMark() {
+  $("find-prev").disabled = $("find-next").disabled = !(state.editing ? editorHits.length : marks.length);
   if (state.editing) {
     $("hits").textContent = editorHits.length ? (at + 1) + " of " + editorHits.length : "No matches";
     if (at >= 0) { const text = $("text"); text.setSelectionRange(editorHits[at], editorHits[at] + $("find-text").value.length); text.scrollTop = text.value.slice(0, editorHits[at]).split("\n").length * parseFloat(getComputedStyle(text).lineHeight) - text.clientHeight/2; }
@@ -1052,13 +1082,21 @@ $("b-opts").onclick = () => app.options(true);
 $("opt-x").onclick = () => app.options(false);
 $("options").onclick = e => { if (e.target === $("options")) app.options(false); };
 $("opt-close").onclick = () => app.options(false);
-$("opt-reset").onclick = () => { if ($("opt-reset").dataset.confirm) { app.clearThemePreview(); send({cmd:"resetSettings"}); $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; } else { $("opt-reset").dataset.confirm="1"; $("opt-reset").textContent="Confirm reset"; } };
+$("opt-reset").onclick = () => { if ($("opt-reset").dataset.confirm) { app.clearPendingZoom(); app.clearThemePreview(); send({cmd:"resetSettings"}); $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; } else { $("opt-reset").dataset.confirm="1"; $("opt-reset").textContent="Confirm reset"; } };
 $("search").oninput = () => app.drawOptions();
-$("b-zoomreset").onclick = () => send({cmd:"setting",key:"zoom",value:1});
-$("b-zoomin").onclick = () => send({ cmd:"setting", key:"zoom", value:Math.min(3, (state.settings.zoom || 1) + 0.1) });
-$("b-zoomout").onclick = () => send({ cmd:"setting", key:"zoom", value:Math.max(0.5, (state.settings.zoom || 1) - 0.1) });
-$("b-find").onclick = () => { $("find").classList.add("show"); $("find-text").focus(); };
-$("find-close").onclick = () => { $("find").classList.remove("show"); clearMarks(); };
+$("b-zoomreset").onclick = () => app.setZoom(1);
+$("b-zoomin").onclick = () => app.adjustZoom(1);
+$("b-zoomout").onclick = () => app.adjustZoom(-1);
+app.showFind = open => {
+  const hadFocus = $("find").contains(document.activeElement);
+  $("find").classList.toggle("show", open);
+  $("b-find").setAttribute("aria-pressed", String(open));
+  if (open) { runFind($("find-text").value); $("find-text").focus(); $("find-text").select(); }
+  else { clearMarks(); if(hadFocus) $("b-find").focus(); }
+  app.scheduleReaderLayout?.(); app.scheduleMap?.();
+};
+$("b-find").onclick = () => app.showFind(!$("find").classList.contains("show"));
+$("find-close").onclick = () => app.showFind(false);
 $("find-next").onclick = () => step(1);
 $("find-prev").onclick = () => step(-1);
 $("find-text").oninput = e => runFind(e.target.value);
@@ -1100,9 +1138,9 @@ document.addEventListener("keydown", e => {
   else if (ctrl && e.key.toLowerCase() === "b") { e.preventDefault(); $("b-side").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "f") { e.preventDefault(); $("b-find").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "u") { e.preventDefault(); $("b-view").onclick(); }
-  else if (ctrl && (e.key === "=" || e.key === "+")) { e.preventDefault(); $("b-zoomin").onclick(); }
-  else if (ctrl && e.key === "-") { e.preventDefault(); $("b-zoomout").onclick(); }
-  else if (ctrl && e.key === "0") { e.preventDefault(); send({ cmd:"setting", key:"zoom", value:1 }); }
+  else if (ctrl && !e.altKey && (e.key === "=" || e.key === "+" || e.code === "NumpadAdd")) { e.preventDefault(); $("b-zoomin").onclick(); }
+  else if (ctrl && !e.altKey && (e.key === "-" || e.key === "_" || e.code === "NumpadSubtract")) { e.preventDefault(); $("b-zoomout").onclick(); }
+  else if (ctrl && !e.altKey && e.key === "0") { e.preventDefault(); app.setZoom(1); }
   else if (e.key === "Escape") { $("find-close").onclick(); app.options(false); }
   else if (e.key === "F3") step(e.shiftKey ? -1 : 1);
 });

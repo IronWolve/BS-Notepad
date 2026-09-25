@@ -94,7 +94,8 @@ impl Renderer {
 
     fn code_theme(&self, theme: &Theme) -> std::borrow::Cow<'_, CodeTheme> {
         let base = self.themes.get(crate::theme::code_theme_name(&theme.id));
-        if !matches!(theme.id.as_str(), "mist" | "sage" | "slate" | "graphite") {
+        if theme.text_contrast == 0 && matches!(theme.id.as_str(),
+            "light" | "dark" | "dracula" | "solarized-dark" | "solarized-light" | "nord" | "gruvbox" | "monokai") {
             return std::borrow::Cow::Borrowed(base);
         }
         let colour = |hex: &str| syntect::highlighting::Color {
@@ -111,7 +112,8 @@ impl Renderer {
             if let Some(fg) = scope.style.foreground {
                 let hex = format!("#{:02x}{:02x}{:02x}", fg.r, fg.g, fg.b);
                 scope.style.foreground =
-                    Some(colour(&crate::theme::guard(&hex, &theme.panel, 4.5)));
+                    Some(colour(&crate::theme::strengthen(
+                        &crate::theme::guard(&hex, &theme.panel, 4.5), &theme.panel, theme.text_contrast)));
             }
             if scope.style.background.is_some() {
                 scope.style.background = Some(colour(&theme.panel));

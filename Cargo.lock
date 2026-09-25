@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "bs-notepad"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "fontdb",
  "html5ever 0.29.1",
