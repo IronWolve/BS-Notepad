@@ -55,6 +55,15 @@ if [ "$INSTALL" = --install ]; then
   for file in "$BIN.exe" WebView2Loader.dll installed.json register-file-types.ps1; do
     cp "$ROOT/deploy/windows/$file" "$WIN_DEST/$file"
   done
+  # Keep existing shortcuts current after the executable rename. The old
+  # contents were archived above, along with the other installation files.
+  if [ "$BIN" != notepad ] && [ -f "$WIN_DEST/notepad.exe" ]; then
+    if cp "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/notepad.exe"; then
+      row "legacy shortcut" "notepad.exe now runs $BIN $VER"
+    else
+      row "legacy shortcut" "Could not update notepad.exe; close the old app and use $BIN.exe."
+    fi
+  fi
   row installed "$WIN_DEST/$BIN.exe"
   row preserved "Settings and previous binaries retained."
 fi

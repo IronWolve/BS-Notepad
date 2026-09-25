@@ -201,8 +201,8 @@ body.autoside #sidehot { display:block; }
 <div id="hot"></div>
 <header id="bar" aria-label="Toolbar">
   <div id="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="4" y="4" width="56" height="56" rx="9" fill="#223d58"/><path d="M13 10h32v44H13z" fill="#ddecf4"/><path d="M13 10h6v44h-6z" fill="#479bcd"/><path d="M24 21h15m-15 8h15m-15 8h15m-15 8h12" stroke="#738fa0" stroke-width="2"/><path d="m33 48 16-27 5 3-16 27-7 4z" fill="#f4b74d" stroke="#1c2c3e" stroke-width="2"/></svg><span id="app-name"></span></div>
+  <button id="b-side" aria-label="Files" aria-controls="side" aria-pressed="false" title="Show or hide the file tree (Ctrl+B)">&#9776; Files</button>
   <button id="b-new" title="New note (Ctrl+N)">New</button>
-  <button id="b-side" aria-label="Toggle sidebar" title="File tree (Ctrl+B)">&#9776;</button>
   <button id="b-open" title="Open (Ctrl+O)">Open</button>
   <button id="b-saveas" title="Save a copy (Ctrl+Shift+S)">Save as</button>
   <button id="b-save" title="Save (Ctrl+S)">Save</button>
@@ -355,7 +355,10 @@ const app = {
     document.body.classList.toggle("autoside", s.sidebar === "auto");
     $("side").classList.toggle("pinned", s.sidebar === "always");
     $("sidepin").classList.toggle("on", s.sidebar === "always");
-    $("b-side").classList.toggle("on", s.sidebar !== "off");
+    const filesDocked = s.sidebar === "always" && s.sidebar_tab === "files";
+    $("b-side").classList.toggle("on", filesDocked);
+    $("b-side").setAttribute("aria-pressed", String(filesDocked));
+    $("b-side").title = (filesDocked ? "Hide" : "Show") + " the file tree (Ctrl+B)";
     $("b-theme").value = s.theme;
     $("grip").setAttribute("aria-valuenow", s.sidebar_width);
     $("grip").setAttribute("aria-valuemin", 180);
@@ -700,8 +703,11 @@ $("b-view").onclick = () => send({ cmd:"setting", key:"view_mode",
 $("b-open").onclick = () => send({ cmd:"open" });
 $("b-save").onclick = () => send({ cmd:"save", text:$("text").value });
 $("b-edit").onclick = () => { app.toggleEdit(!state.editing); if (!state.editing) send({cmd:"preview"}); };
-$("b-side").onclick = () => send({ cmd:"setting", key:"sidebar",
-  value: state.settings.sidebar === "off" ? "always" : "off" });
+$("b-side").onclick = () => {
+  const hide = state.settings.sidebar === "always" && state.settings.sidebar_tab === "files";
+  if (!hide) send({ cmd:"setting", key:"sidebar_tab", value:"files" });
+  send({ cmd:"setting", key:"sidebar", value:hide ? "off" : "always" });
+};
 $("sidepin").onclick = () => send({ cmd:"setting", key:"sidebar",
   value: state.settings.sidebar === "always" ? "auto" : "always" });
 $("sidehot").onmouseenter = () => $("side").classList.add("show");
