@@ -9,18 +9,20 @@
     Pass -Remove to undo it.
 #>
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "notepad.exe"),
+    [string]$Exe = "",
     [string[]]$Extensions = @(".md", ".markdown", ".mdown", ".mkd", ".mkdn"),
     [switch]$Remove
 )
 
-$progId = "Notepad.Markdown"
+$manifest = Get-Content (Join-Path $PSScriptRoot "installed.json") -Raw | ConvertFrom-Json
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot ($manifest.name + ".exe") }
+$progId = $manifest.name + ".Markdown"
 $classes = "HKCU:\Software\Classes"
 
 if ($Remove) {
     Remove-Item -Path "$classes\$progId" -Recurse -ErrorAction SilentlyContinue
     foreach ($ext in $Extensions) {
-        Remove-Item -Path "$classes\$ext\OpenWithProgids" -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path "$classes\$ext\OpenWithProgids" -Name $progId -ErrorAction SilentlyContinue
     }
     Write-Host "Associations removed." -ForegroundColor Green
     return

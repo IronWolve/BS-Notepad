@@ -1,96 +1,63 @@
 #!/usr/bin/env bash
-# Builds both targets on this host and installs the Windows binary to
-# C:\work\<project>\. Everything derives from the project folder name, so a
-# rename moves the install with it.
-set -u
+# Build portable packages. Installation is explicit and never starts the app.
+set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-NAME=$(basename "$ROOT")
 REPO="$ROOT/repo"
 BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' "$REPO/Cargo.toml" | head -1)
 VER=$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO/Cargo.toml" | head -1)
-WIN_DEST="/mnt/c/work/$NAME"
-
-A=$'\033[38;5;39m'; OK=$'\033[38;5;42m'; WARN=$'\033[38;5;214m'; ERR=$'\033[38;5;203m'
-L=$'\033[38;5;245m'; V=$'\033[38;5;255m'; D=$'\033[2m'; Z=$'\033[0m'
-[ -t 1 ] || { A=""; OK=""; WARN=""; ERR=""; L=""; V=""; D=""; Z=""; }
-row() { printf "${L}%-18s${Z} ${V}%s${Z}\n" "$1" "$2"; }
-mb()  { awk -v b="$(stat -c%s "$1" 2>/dev/null || echo 0)" 'BEGIN{printf "%.1f MB", b/1048576}'; }
-
-printf "${A}%s${Z} ${D}%s${Z}\n" "build" "$NAME"
-row "project" "$ROOT"
-row "binary" "$BIN $VER"
-row "windows dest" "$WIN_DEST"
-echo
-
-fail=0
-build() { # label target outpath
-  local label=$1 target=$2 out=$3 t0 dt
-  t0=$SECONDS
-  if [ -n "$target" ]; then (cd "$REPO" && nice -n 15 cargo build --release -j 6 --target "$target" -q)
-  else (cd "$REPO" && nice -n 15 cargo build --release -j 6 -q); fi
-  dt=$((SECONDS - t0))
-  if [ -f "$out" ]; then printf "${OK}%-18s${Z} ${V}%s${Z} ${D}in %ss${Z}\n" "$label" "$(mb "$out")" "$dt"
-  else printf "${ERR}%-18s${Z} %s\n" "$label" "build produced nothing"; fail=1; fi
+WIN_DEST=${WINDOWS_DEST:-/mnt/c/work/$BIN}
+TARGET=${1:-all}
+INSTALL=${2:-}
+case "$TARGET" in all|linux|windows) ;; *) echo "Usage: $0 [all|linux|windows] [--install]"; exit 2;; esac
+[ -z "$INSTALL" ] || [ "$INSTALL" = --install ] || { echo "Unknown option: $INSTALL"; exit 2; }
+export CARGO_TARGET_DIR="$ROOT/tmp/target"
+export TMPDIR="$ROOT/tmp/build"
+export XDG_CACHE_HOME="$ROOT/tmp/cache"
+mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+A=$'\033[38;5;39m'; OK=$'\033[38;5;42m'; Z=$'\033[0m'
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then A=""; OK=""; Z=""; fi
+row() { printf "${A}%-18s${Z} %s\n" "$1" "$2"; }
+row project "$BIN $VER"
+row targets "$TARGET"
+row jobs "${BUILD_JOBS:-2}"
+row output "$ROOT/deploy"
+build() {
+  local target=$1 label=$2 suffix=$3 started=$SECONDS
+  local args=(--offline --locked --release -j "${BUILD_JOBS:-2}" --manifest-path "$REPO/Cargo.toml")
+  [ -z "$target" ] || args+=(--target "$target")
+  nice -n 15 cargo build "${args[@]}"
+  local built="$CARGO_TARGET_DIR/${target:+$target/}release/$BIN$suffix"
+  test -s "$built"
+  mkdir -p "$ROOT/deploy/$label"
+  cp "$built" "$ROOT/deploy/$label/$BIN$suffix"
+  row "$label" "$(stat -c%s "$built") bytes; $((SECONDS-started))s"
 }
-
-build "linux" "" "$ROOT/tmp/target/release/$BIN"
-build "windows" "x86_64-pc-windows-gnu" "$ROOT/tmp/target/x86_64-pc-windows-gnu/release/$BIN.exe"
-[ $fail -eq 0 ] || exit 1
-echo
-
-# Copy named files only. Never a mirror: a delete-based sync would wipe
-# whatever the user keeps in these folders.
-mkdir -p "$ROOT/deploy/linux" "$ROOT/deploy/windows"
-cp "$ROOT/tmp/target/release/$BIN" "$ROOT/deploy/linux/$BIN"
-cp "$ROOT/tmp/target/x86_64-pc-windows-gnu/release/$BIN.exe" "$ROOT/deploy/windows/$BIN.exe"
-row "deploy/linux" "$BIN"
-row "deploy/windows" "$BIN.exe"
-
-# The mingw build links the WebView2 loader dynamically, so the DLL has to
-# travel with the exe. Version comes from the lock file, never hardcoded.
-W2VER=$(grep -A1 'name = "webview2-com-sys"' "$REPO/Cargo.lock" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
-W2DLL=$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" \
-          -path "*webview2-com-sys-$W2VER/x64/WebView2Loader.dll" 2>/dev/null | head -1)
-if [ -n "$W2DLL" ]; then
+if [ "$TARGET" != windows ]; then build "" linux ""; fi
+if [ "$TARGET" != linux ]; then
+  build x86_64-pc-windows-gnu windows .exe
+  W2VER=$(grep -A1 'name = "webview2-com-sys"' "$REPO/Cargo.lock" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+  W2DLL=$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" -path "*/webview2-com-sys-$W2VER/x64/WebView2Loader.dll" -print -quit)
+  test -n "$W2DLL" || { echo "Missing cached WebView2Loader.dll $W2VER"; exit 1; }
   cp "$W2DLL" "$ROOT/deploy/windows/WebView2Loader.dll"
-  row "deploy/windows" "WebView2Loader.dll ($W2VER)"
-else
-  printf "${ERR}%-18s${Z} %s\n" "missing dll" "WebView2Loader.dll for $W2VER not found"; exit 1
+  cp "$REPO/scripts/register-file-types.ps1" "$ROOT/deploy/windows/register-file-types.ps1"
+  printf '{"name":"%s","version":"%s"}\n' "$BIN" "$VER" > "$ROOT/deploy/windows/installed.json"
 fi
-
-if [ -d /mnt/c/work ]; then
+if [ "$INSTALL" = --install ]; then
+  [ "$TARGET" != linux ] || { echo 'Installation requires a Windows build.'; exit 2; }
   mkdir -p "$WIN_DEST"
-  # An existing build is moved into a version folder INSIDE the install dir.
-  # Never a sibling directory, and never deleted.
-  if [ -f "$WIN_DEST/$BIN.exe" ]; then
-    OLD=$(sed -n 's/.*"version"[: ]*"\([^"]*\)".*/\1/p' "$WIN_DEST/installed.json" 2>/dev/null | head -1)
-    [ -n "$OLD" ] || OLD="unknown-$(date +%Y%m%d-%H%M%S)"
-    ARCHIVE="$WIN_DEST/$BIN-$OLD"
-    mkdir -p "$ARCHIVE"
-    mv -f "$WIN_DEST/$BIN.exe" "$ARCHIVE/$BIN.exe"
-    [ -f "$WIN_DEST/WebView2Loader.dll" ] && mv -f "$WIN_DEST/WebView2Loader.dll" "$ARCHIVE/WebView2Loader.dll"
-    [ -f "$WIN_DEST/installed.json" ] && mv -f "$WIN_DEST/installed.json" "$ARCHIVE/installed.json"
-    if [ -f "$ARCHIVE/$BIN.exe" ]; then
-      printf "${D}%-18s %s${Z}\n" "kept previous" "$BIN-$OLD\\ (inside the install dir)"
-    else
-      printf "${ERR}%-18s${Z} %s\n" "archive failed" "$ARCHIVE"; exit 1
+  ARCHIVE="$WIN_DEST/previous-$(date +%Y%m%d-%H%M%S)-$$"
+  for file in "$BIN.exe" notepad.exe WebView2Loader.dll installed.json register-file-types.ps1; do
+    if [ -f "$WIN_DEST/$file" ]; then
+      mkdir -p "$ARCHIVE"
+      cp -p "$WIN_DEST/$file" "$ARCHIVE/$file"
     fi
-  fi
-  cp "$ROOT/deploy/windows/$BIN.exe" "$WIN_DEST/$BIN.exe"
-  cp "$ROOT/deploy/windows/WebView2Loader.dll" "$WIN_DEST/WebView2Loader.dll"
-  cp "$REPO/scripts/register-file-types.ps1" "$WIN_DEST/register-file-types.ps1"
-  printf '{"name":"%s","version":"%s","installed":"%s"}\n' \
-    "$BIN" "$VER" "$(date -Is)" > "$WIN_DEST/installed.json"
-  # Say it only if it is true.
-  if [ -f "$WIN_DEST/$BIN.exe" ] && [ -f "$WIN_DEST/WebView2Loader.dll" ]; then
-    printf "${OK}%-18s${Z} ${V}%s${Z}\n" "installed" "C:\\work\\$NAME\\$BIN.exe ($VER)"
-  else
-    printf "${ERR}%-18s${Z} %s\n" "install failed" "files missing at $WIN_DEST"; exit 1
-  fi
-else
-  printf "${WARN}%-18s${Z} %s\n" "skipped install" "/mnt/c/work not present"
+  done
+  for file in "$BIN.exe" WebView2Loader.dll installed.json register-file-types.ps1; do
+    cp "$ROOT/deploy/windows/$file" "$WIN_DEST/$file"
+  done
+  row installed "$WIN_DEST/$BIN.exe"
+  row preserved "Settings and previous binaries retained."
 fi
-echo
-printf "${OK}%-18s${Z} ${V}%s${Z}\n" "done" "run it: see below"
-printf "${D}  linux   %s/deploy/linux/%s <file.md>${Z}\n" "$ROOT" "$BIN"
-printf "${D}  windows C:\\\\work\\\\%s\\\\%s.exe <file.md>${Z}\n" "$NAME" "$BIN"
+printf "${OK}Build complete.${Z} No application was started.\n"
+row windows "$ROOT/deploy/windows/$BIN.exe"
+row linux "$ROOT/deploy/linux/$BIN"
