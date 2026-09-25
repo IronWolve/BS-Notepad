@@ -347,3 +347,11 @@ fn inline_formatting_inside_headings_keeps_links_and_alt_text_in_the_heading() {
     assert!(doc.html.contains("alt=\"badge\""));
     assert_eq!(doc.html.matches("</h2>").count(), 2);
 }
+
+#[test]
+fn unknown_saved_theme_normalizes_to_the_rendered_fallback() {
+    let f = Fixture::new();
+    std::fs::write(f.0.join("settings.json"), r#"{"theme":"removed-theme"}"#).unwrap();
+    let settings = Settings::load(&f.0);
+    assert_eq!(settings.theme, "dark");
+}

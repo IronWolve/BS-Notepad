@@ -107,6 +107,7 @@ impl Settings {
     }
 
     pub fn normalize(&mut self) {
+        self.theme = crate::theme::find(&self.theme).id;
         self.ui_size = self.ui_size.clamp(10, 28);
         self.body_size = self.body_size.clamp(10, 48);
         self.code_size = self.code_size.clamp(10, 40);

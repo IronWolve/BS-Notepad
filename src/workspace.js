@@ -1,9 +1,36 @@
 // Documents keep their own editor nodes so switching tabs preserves native undo.
 const editorNodes = new Map(), pendingViews = new Map();
 let mapTimer, mapFrame, mapHeight = 0, helpFocus, selectedHelp = 'start';
-let menuOrigin, choiceOrigin, choiceOptions = [], choiceValue, choiceChange;
+let menuOrigin, choiceOrigin, choiceOptions = [], choiceValue, choiceChange, choicePreview, choiceTheme=false;
+let themePreviewTimer, themePreviewToken=0, readerFrame, dialogFrame;
 const cleanPath = path => normalizedPath(path || '');
 const fileName = path => cleanPath(path).split('/').pop() || 'Untitled';
+
+const MENU_PATHS={
+ note:'<path d="M14 3H5v18h14V8zM14 3v5h5M8 13h8M12 10v7"/>',
+ open:'<path d="M3 8V5h6l3 3h8v3M3 9h18l-3 11H2z"/>',
+ workspace:'<path d="M3 5h6l3 3h9v12H3zM8 8v12M5 12h1M5 15h1"/>',
+ save:'<path d="M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/>',
+ saveAs:'<path d="M4 3h12l3 3v5M7 3v6h8M3 3v18h8M13 18l6-6 3 3-6 6-4 1z"/>',
+ reload:'<path d="M20 6v6h-6M20 12a8 8 0 1 0-2 6"/>',
+ close:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m9 9 6 6m0-6-6 6"/>',
+ closeOthers:'<path d="M8 4h13v12M3 8h13v13H3zM7 12l5 5m0-5-5 5"/>',
+ edit:'<path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/>',
+ read:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+ source:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/>',
+ rendered:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+ map:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M17 7h2M17 10h2M17 13h2M17 16h2"/>',
+ wrap:'<path d="M3 6h18M3 11h14a4 4 0 0 1 0 8h-5m3-3-3 3 3 3M3 17h5"/>',
+ options:'<path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/>',
+ exit:'<path d="M10 4H4v16h6M10 12h11m-4-4 4 4-4 4"/>',
+ newTab:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 12h8M12 8v8"/>',
+ enter:'<path d="M9 4H4v16h5M12 7l5 5-5 5M7 12h14"/>',
+ copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 5V3H3v13h2"/>',
+ filename:'<path d="M14 3H5v18h14V8zM14 3v5h5M8 13h8M8 17h5"/>',
+ collapse:'<path d="M8 3h13v13M3 8h13v13H3zM6 14h7"/>',
+ check:'<path d="m5 12 4 4L19 6"/>'
+};
+function menuIcon(name){return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(MENU_PATHS[name]||MENU_PATHS.note)+'</svg>';}
 
 function wireEditor(node) {
   node.oninput = () => {
@@ -69,15 +96,16 @@ app.setTabs = payload => {
     wrap.onauxclick=e=>{if(e.button===1){e.preventDefault();send({cmd:'closeTab',id:tab.id});}};
     wrap.oncontextmenu=e=>{
       e.preventDefault();showMenu(button,[
-        {label:'Close this tab',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:tab.id})},
-        {label:'Keep only this tab',disabled:payload.tabs.length<2,action:()=>send({cmd:'closeOtherTabs',id:tab.id})},
-        null,{label:'Copy full path',disabled:!tab.path,action:()=>copyText(cleanPath(tab.path))}
+        {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:tab.id})},
+        {label:'Keep only this tab',icon:'closeOthers',disabled:payload.tabs.length<2,action:()=>send({cmd:'closeOtherTabs',id:tab.id})},
+        null,{label:'Copy full path',icon:'copy',disabled:!tab.path,action:()=>copyText(cleanPath(tab.path))}
       ],e);
     };
     wrap.append(button,close);scroller.appendChild(wrap);
   }
   $('content-row').setAttribute('aria-labelledby','tab-'+payload.active);
   app.documentChrome();
+  app.fitTitle?.();
   scroller.scrollLeft=scroll;
   if(focus){if(payload.tabs.length===1)$('b-menu').focus();else scroller.querySelector(`.tab-label[data-tab-id="${payload.active}"]`)?.focus();}
   if(payload.tabs.length>1&&payload.active!==state.activeTab)scroller.querySelector('.document-tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
@@ -88,13 +116,19 @@ app.updateTabDirty = dirty => {
   const marker=$('document-tabs').querySelector(`[data-id="${state.activeTab}"] .tab-dirty`);if(marker)marker.hidden=!dirty;
 };
 const baseDocument=app.setDocument;
-app.setDocument = document => {
-  const id=document.tab ?? state.activeTab ?? 1;
+app.setDocument = payload => {
+  if(payload.themeId && payload.themeId !== (state.previewTheme || state.settings.theme)) return;
+  const id=payload.tab ?? state.activeTab ?? 1;
   const changed=state.activeTab!==id || !editorNodes.has(id);
   editorFor(id);
-  if(changed)pendingViews.set(id,document);
-  baseDocument(document);
-  app.toggleEdit(document.editing ?? state.editing,false);
+  if(changed)pendingViews.set(id,payload);
+  baseDocument(payload);
+  for(const table of $('article').querySelectorAll('table')) {
+    const wrap=document.createElement('div');wrap.className='table-scroll';table.before(wrap);wrap.appendChild(table);
+  }
+  for(const image of $('article').querySelectorAll('img')) image.addEventListener('load',()=>app.scheduleReaderLayout(),{once:true});
+  app.toggleEdit(payload.editing ?? state.editing,false);
+  app.scheduleReaderLayout?.();
   app.scheduleMap();
 };
 app.setEditorText = payload => {
@@ -130,10 +164,13 @@ function showMenu(anchor,items,point) {
   for(const item of items) {
     if(!item){menu.appendChild(document.createElement('hr'));continue;}
     const button=document.createElement('button');button.setAttribute('role','menuitem');button.disabled=!!item.disabled;if(item.brand)button.classList.add('menu-brand');
-    const icon=document.createElement('span');icon.className='menu-symbol';icon.textContent=item.symbol||'';icon.setAttribute('aria-hidden','true');
+    const icon=document.createElement('span');icon.className='menu-symbol';icon.setAttribute('aria-hidden','true');
+    if(item.brand&&state.logoUrl){const image=document.createElement('img');image.src=state.logoUrl;image.alt='';icon.appendChild(image);}else icon.innerHTML=menuIcon(item.icon);
     const label=document.createElement('span');label.className='menu-label';label.textContent=item.label;
     const hint=document.createElement('span');hint.className='menu-hint';hint.textContent=item.hint||'';
-    button.append(icon,label,hint);button.onclick=()=>{closeMenu();item.action();};menu.appendChild(button);
+    button.append(icon,label,hint);
+    if(typeof item.checked==='boolean'){button.setAttribute('role','menuitemcheckbox');button.setAttribute('aria-checked',String(item.checked));const check=document.createElement('span');check.className='menu-check';check.setAttribute('aria-hidden','true');if(item.checked)check.innerHTML=menuIcon('check');button.appendChild(check);}
+    button.onclick=()=>{closeMenu();item.action();};menu.appendChild(button);
   }
   popupPosition(menu,anchor,point);syncPopupState();menu.querySelector('button:not(:disabled)')?.focus();
 }
@@ -148,17 +185,17 @@ async function copyText(text) {
 function fileMenu(event,row) {
   event.preventDefault();const path=row.dataset.path,folder=row.classList.contains('dir');
   const entries=folder?[
-    {label:row.getAttribute('aria-expanded')==='true'?'Fold this folder':'Expand this folder',symbol:'›',action:()=>row.click()},
-    {label:'Browse from this folder',action:()=>send({cmd:'workspacePath',path})}
+    {label:row.getAttribute('aria-expanded')==='true'?'Fold this folder':'Expand this folder',icon:row.getAttribute('aria-expanded')==='true'?'collapse':'open',action:()=>row.click()},
+    {label:'Browse from this folder',icon:'workspace',action:()=>send({cmd:'workspacePath',path})}
   ]:[
-    {label:'Open here',symbol:'↵',action:()=>send({cmd:'openPath',path})},
-    {label:'Open in new tab',symbol:'+',action:()=>send({cmd:'openPath',path,newTab:true})}
+    {label:'Open here',icon:'enter',action:()=>send({cmd:'openPath',path})},
+    {label:'Open in new tab',icon:'newTab',action:()=>send({cmd:'openPath',path,newTab:true})}
   ];
   entries.push(null,
-    {label:'Copy full path',action:()=>copyText(cleanPath(path))},
-    {label:'Copy filename',action:()=>copyText(fileName(path))},
-    {label:folder?'Open folder in file manager':'Open containing folder',action:()=>send({cmd:'showFolder',path})},
-    null,{label:'Refresh file list',symbol:'↻',action:()=>send({cmd:'refreshTree'})});
+    {label:'Copy full path',icon:'copy',action:()=>copyText(cleanPath(path))},
+    {label:'Copy filename',icon:'filename',action:()=>copyText(fileName(path))},
+    {label:folder?'Open folder in file manager':'Open containing folder',icon:'open',action:()=>send({cmd:'showFolder',path})},
+    null,{label:'Refresh file list',icon:'reload',action:()=>send({cmd:'refreshTree'})});
   showMenu(row,entries,event);
 }
 for(const pane of [$('pane-files'),$('pane-recent')]) {
@@ -176,30 +213,64 @@ app.selectControl = (options,value,change,label) => {
   labelChoice(button,options.find(o=>o.value===value)?.label||String(value));
   button.onclick=()=>openChoices(button,options,value,change);return button;
 };
+function layoutChoices() {
+  const popup=$('choice-popup');if(popup.hidden||!choiceOrigin)return;
+  const rect=choiceOrigin.getBoundingClientRect(),down=innerHeight-rect.bottom-14,up=rect.top-14;
+  const above=down<180&&up>down,available=Math.max(80,above?up:down);
+  popup.style.maxHeight=available+'px';
+  $('choice-list').style.maxHeight=Math.max(40,available-12-($('choice-search').hidden?0:$('choice-search').offsetHeight+5)-($('choice-hint').hidden?0:$('choice-hint').offsetHeight+4))+'px';
+  popup.style.left=Math.max(8,Math.min(rect.left,innerWidth-popup.offsetWidth-8))+'px';
+  popup.style.top=Math.max(8,above?rect.top-popup.offsetHeight-6:rect.bottom+6)+'px';
+}
+function markChoice(value) {
+  choiceValue=value;
+  for(const button of $('choice-list').querySelectorAll('button'))button.setAttribute('aria-selected',String(button.dataset.value===String(value)));
+}
 function drawChoices() {
   const query=$('choice-search').value.toLowerCase(),list=$('choice-list');list.replaceChildren();
   const choices=choiceOptions.filter(o=>o.label.toLowerCase().includes(query));
   for(const option of choices) {
-    const button=document.createElement('button');button.setAttribute('role','option');button.setAttribute('aria-selected',String(option.value===choiceValue));button.textContent=option.label;
+    const button=document.createElement('button');button.dataset.value=option.value;button.setAttribute('role','option');button.setAttribute('aria-selected',String(option.value===choiceValue));
+    if(choiceTheme){
+      const theme=state.themes.find(t=>t.id===option.value),swatch=document.createElement('span');swatch.className='theme-swatch';swatch.setAttribute('aria-hidden','true');swatch.textContent='Aa';
+      if(theme){swatch.style.background=theme.bg;swatch.style.color=theme.fg;swatch.style.borderColor=theme.rule;}button.appendChild(swatch);
+    }
+    const label=document.createElement('span');label.className='choice-label';label.textContent=option.label;button.appendChild(label);
+    if(choiceTheme){const saved=document.createElement('span');saved.className='choice-saved';saved.setAttribute('aria-hidden','true');if(option.value===state.settings.theme)saved.innerHTML=menuIcon('check');button.appendChild(saved);}
+    if(choicePreview){const preview=()=>{markChoice(option.value);choicePreview?.(option.value);};button.onmouseenter=preview;button.onfocus=preview;}
     button.onclick=()=>{const callback=choiceChange;closeChoices();callback(option.value);};list.appendChild(button);
   }
   if(!choices.length){const empty=document.createElement('div');empty.className='choice-empty';empty.textContent='No matching choices';list.appendChild(empty);}
+  requestAnimationFrame(layoutChoices);
 }
-function openChoices(anchor,options,value,change) {
-  closeMenu(false);closeChoices(false);choiceOrigin=anchor;choiceOptions=options;choiceValue=value;choiceChange=change;
-  anchor.setAttribute('aria-expanded','true');$('choice-search').value='';$('choice-search').hidden=options.length<9;
-  drawChoices();const popup=$('choice-popup');popup.style.width=Math.max(220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popupPosition(popup,anchor);syncPopupState();
+function openChoices(anchor,options,value,change,preview=null) {
+  closeMenu(false);closeChoices(false);choiceOrigin=anchor;choiceOptions=options;choiceValue=value;choiceChange=change;choicePreview=preview;choiceTheme=!!preview;
+  anchor.setAttribute('aria-expanded','true');$('choice-search').value='';$('choice-search').hidden=options.length<(choiceTheme?19:9);$('choice-hint').hidden=!choiceTheme;
+  const popup=$('choice-popup');popup.style.width=Math.max(choiceTheme?250:220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popup.hidden=false;
+  drawChoices();layoutChoices();syncPopupState();
   if(!$('choice-search').hidden)$('choice-search').focus();
   else (popup.querySelector('[aria-selected=true]') || popup.querySelector('button'))?.focus();
   popup.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest'});
 }
 $('choice-search').oninput=drawChoices;
 app.setThemeControl=()=>{
-  const name=state.themes.find(t=>t.id===state.settings.theme)?.name||'Theme';
+  const current=state.previewTheme||state.settings.theme,name=state.themes.find(t=>t.id===current)?.name||'Theme';
   const arrow=document.createElement('span');arrow.className='select-arrow';arrow.textContent='▾';arrow.setAttribute('aria-hidden','true');
-  $('b-theme').replaceChildren(arrow);$('b-theme').title='Theme: '+name;$('b-theme').setAttribute('aria-label','Theme: '+name);
+  $('b-theme').replaceChildren(arrow);$('b-theme').title=(state.previewTheme?'Preview: ':'Theme: ')+name;$('b-theme').setAttribute('aria-label','Theme: '+name);
 };
-app.chooseTheme=()=>openChoices($('b-theme'),state.themes.map(t=>({value:t.id,label:t.name})),state.settings.theme,value=>send({cmd:'setting',key:'theme',value}));
+app.clearThemePreview=()=>{clearTimeout(themePreviewTimer);themePreviewToken++;state.previewTheme=null;app.setThemeControl();};
+app.previewTheme=id=>{
+  if(!state.themes.some(theme=>theme.id===id))return;
+  if(state.previewTheme===id||(!state.previewTheme&&state.settings.theme===id))return;
+  clearTimeout(themePreviewTimer);state.previewTheme=id;const token=++themePreviewToken;app.setThemeControl();
+  themePreviewTimer=setTimeout(()=>send({cmd:'previewTheme',theme:id,token}),55);
+};
+app.themePreview=payload=>{
+  if(payload.token!==themePreviewToken||payload.id!==state.previewTheme)return;
+  app.applyTheme(payload.theme);app.setThemeControl();
+};
+app.commitTheme=id=>{app.clearThemePreview();send({cmd:'setting',key:'theme',value:id});};
+app.chooseTheme=()=>openChoices($('b-theme'),state.themes.map(t=>({value:t.id,label:t.name})),state.previewTheme||state.settings.theme,app.commitTheme,app.previewTheme);
 
 const HELP = [
  {id:'start',title:'Getting started',paragraphs:[
@@ -221,8 +292,8 @@ const HELP = [
   'Use the Document map button in the toolbar, the main menu, or Options → Editor to show or hide it. With the map focused, arrow keys and Page Up / Page Down scroll the document.'
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
-  'Choose a color theme from the toolbar or Options → Appearance. Mist and Sage are softer light palettes; Slate and Graphite offer medium contrast.',
-  'The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
+  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Mist and Sage are softer light palettes; Slate and Graphite offer medium contrast.',
+  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
@@ -235,9 +306,10 @@ app.drawHelp=()=>{
   const pages=query?HELP.filter(p=>(p.title+' '+(p.paragraphs||[]).join(' ')+' '+JSON.stringify(p.shortcuts||[])).toLowerCase().includes(query)):HELP.filter(p=>p.id===selectedHelp);
   for(const page of pages){const heading=document.createElement('h3');heading.textContent=page.title;$('help-content').appendChild(heading);
     for(const text of page.paragraphs||[]){const p=document.createElement('p');p.textContent=text;$('help-content').appendChild(p);}
-    for(const [label,key] of page.shortcuts||[]){const row=document.createElement('div');row.className='shortcut';const name=document.createElement('span');name.textContent=label;const kbd=document.createElement('kbd');kbd.textContent=key;row.append(name,kbd);$('help-content').appendChild(row);}}
+    const shortcuts=document.createElement('div');shortcuts.className='shortcut-grid';
+    for(const [label,key] of page.shortcuts||[]){const row=document.createElement('div');row.className='shortcut';const name=document.createElement('span');name.textContent=label;const kbd=document.createElement('kbd');kbd.textContent=key;row.append(name,kbd);shortcuts.appendChild(row);}if(shortcuts.children.length)$('help-content').appendChild(shortcuts);}
   if(!pages.length)$('help-content').textContent='No matching help topics.';
-  $('help-content').scrollTop=0;
+  $('help-content').scrollTop=0;app.scheduleDialogFit?.();
 };
 app.help=open=>{
   closeMenu(false);closeChoices(false);
@@ -257,20 +329,19 @@ app.options=open=>{closeChoices(false);closeMenu(false);if(open&&$('help-overlay
 
 function mainMenu(){showMenu($('b-menu'),[
  {label:state.name||'BS Notepad',brand:true,hint:'Help · F1',action:()=>app.help(true)},null,
- {label:'New note',symbol:'+',hint:'Ctrl+N',action:()=>$('b-new').click()},
- {label:'Browse for a file…',symbol:'↗',hint:'Ctrl+O',action:()=>$('b-open').click()},
- {label:'Choose a workspace folder…',action:()=>$('folder-open').click()},null,
- {label:'Save edits',symbol:'✓',hint:'Ctrl+S',action:()=>$('b-save').click()},
- {label:'Save a copy…',hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
- {label:'Read again from disk',symbol:'↻',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
- {label:'Close this tab',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},null,
- {label:state.editing?'Read document':'Edit document',hint:'Ctrl+E',action:()=>$('b-edit').click()},
- {label:state.settings.view_mode==='source'?'Rendered view':'Source view',hint:'Ctrl+U',action:()=>$('b-view').click()},
- {label:'Document map',symbol:state.settings.minimap?'✓':'',action:()=>$('b-map').click()},
- {label:'Wrap long lines',symbol:state.settings.word_wrap?'✓':'',action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},
- {label:'Options…',hint:'Ctrl+,',action:()=>app.options(true)},
- null,
- {label:'Quit '+(state.name||'BS Notepad'),hint:'Ctrl+Q',action:()=>send({cmd:'quit'})}
+ {label:'New note',icon:'note',hint:'Ctrl+N',action:()=>$('b-new').click()},
+ {label:'Browse for a file…',icon:'open',hint:'Ctrl+O',action:()=>$('b-open').click()},
+ {label:'Choose a workspace folder…',icon:'workspace',action:()=>$('folder-open').click()},null,
+ {label:'Save edits',icon:'save',hint:'Ctrl+S',action:()=>$('b-save').click()},
+ {label:'Save a copy…',icon:'saveAs',hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
+ {label:'Read again from disk',icon:'reload',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
+ {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},null,
+ {label:state.editing?'Read document':'Edit document',icon:state.editing?'read':'edit',hint:'Ctrl+E',action:()=>$('b-edit').click()},
+ {label:state.settings.view_mode==='source'?'Rendered view':'Source view',icon:state.settings.view_mode==='source'?'rendered':'source',hint:'Ctrl+U',action:()=>$('b-view').click()},
+ {label:'Document map',icon:'map',checked:!!state.settings.minimap,action:()=>$('b-map').click()},
+ {label:'Wrap long lines',icon:'wrap',checked:!!state.settings.word_wrap,action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},
+ {label:'Options…',icon:'options',hint:'Ctrl+,',action:()=>app.options(true)},null,
+ {label:'Quit '+(state.name||'BS Notepad'),icon:'exit',hint:'Ctrl+Q',action:()=>send({cmd:'quit'})}
 ]);}
 $('b-menu').onclick=mainMenu;
 $('b-map').onclick=()=>send({cmd:'setting',key:'minimap',value:!state.settings.minimap});
@@ -318,9 +389,47 @@ $('minimap').onpointerup=$('minimap').onpointercancel=()=>{mapDrag=null;};
 $('map-viewport').onkeydown=e=>{const target=scrollTarget();let delta=0;if(e.key==='ArrowDown')delta=40;else if(e.key==='ArrowUp')delta=-40;else if(e.key==='PageDown')delta=target.clientHeight;else if(e.key==='PageUp')delta=-target.clientHeight;else if(e.key==='Home')target.scrollTop=0;else if(e.key==='End')target.scrollTop=target.scrollHeight;else return;e.preventDefault();target.scrollTop+=delta;app.mapPosition();};
 const originalScroll=$('doc').onscroll;$('doc').onscroll=e=>{originalScroll?.(e);app.mapPosition();};
 const originalSettings=app.applySettings;
-app.applySettings=settings=>{originalSettings(settings);$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
-const originalTheme=app.applyTheme;app.applyTheme=theme=>{originalTheme(theme);app.scheduleMap();};
-new ResizeObserver(()=>{app.scheduleMap();closeChoices(false);closeMenu(false);}).observe($('content-row'));
+app.applySettings=settings=>{originalSettings(settings);app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
+const originalTheme=app.applyTheme;app.applyTheme=theme=>{if(theme.id&&theme.id!==(state.previewTheme||state.settings.theme))return;originalTheme(theme);app.scheduleMap();};
+new ResizeObserver(()=>{app.scheduleMap();app.scheduleReaderLayout?.();closeChoices(false);closeMenu(false);}).observe($('content-row'));
+
+app.fitTitle=()=>{
+  const bar=$('bar').getBoundingClientRect(),left=$('left-tools').getBoundingClientRect(),right=$('document-actions').getBoundingClientRect();
+  $('bar').style.setProperty('--title-clearance',Math.ceil(2*(Math.max(left.right-bar.left,bar.right-right.left)+12))+'px');
+};
+new ResizeObserver(()=>app.fitTitle()).observe($('bar'));
+const readerMeasure=document.createElement('canvas').getContext('2d');
+app.layoutReader=()=>{
+  const article=$('article'),doc=$('doc'),available=doc.clientWidth;if(!available)return;
+  const markdown=!state.path||/\.(md|markdown|mdown|mkd|mkdn|mdx)$/i.test(state.path);
+  if(!markdown||state.settings.view_mode==='source'){
+    article.style.setProperty('--reader-width','100%');article.style.setProperty('--reader-offset','0px');return;
+  }
+  const style=getComputedStyle(article),padding=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),size=parseFloat(style.fontSize);
+  if(readerMeasure)readerMeasure.font=size+'px '+style.fontFamily;
+  const prose=Math.max(680,Math.min(960,(readerMeasure?readerMeasure.measureText('0'.repeat(82)).width:82*size*.55)+padding));
+  const blocks=[...article.querySelectorAll('table,pre')].map(element=>({element,width:element.style.getPropertyValue('width'),max:element.style.getPropertyValue('max-width')}));
+  for(const block of blocks){block.element.style.width='max-content';block.element.style.maxWidth='none';}
+  let widest=prose;
+  for(const block of blocks)widest=Math.max(widest,block.element.scrollWidth+padding);
+  for(const block of blocks){block.element.style.width=block.width;block.element.style.maxWidth=block.max;}
+  for(const image of article.querySelectorAll('img'))widest=Math.max(widest,(Number(image.getAttribute('width'))||image.naturalWidth||0)+padding);
+  const width=Math.min(available,Math.ceil(widest)),offset=Math.max(0,Math.floor((available-width)*.4));
+  article.style.setProperty('--reader-width',width+'px');article.style.setProperty('--reader-offset',offset+'px');
+  app.scheduleMap();
+};
+app.scheduleReaderLayout=()=>{cancelAnimationFrame(readerFrame);readerFrame=requestAnimationFrame(app.layoutReader);};
+function fitDialog(panel,content){
+  if(!panel.offsetParent)return;
+  const available=innerHeight-32,current=panel.getBoundingClientRect().height;
+  const overflow=content.scrollHeight-content.clientHeight;
+  const needed=Math.min(available,current+Math.max(0,overflow)+2);
+  if((overflow>1||current>available)&&Math.abs(needed-current)>1)panel.style.height=needed+'px';
+}
+app.scheduleDialogFit=()=>{cancelAnimationFrame(dialogFrame);dialogFrame=requestAnimationFrame(()=>{fitDialog($('panel'),$('sets'));fitDialog($('help-panel'),$('help-content'));});};
+const originalDrawOptions=app.drawOptions;app.drawOptions=()=>{originalDrawOptions();app.scheduleDialogFit();};
+window.addEventListener('resize',()=>{app.fitTitle();app.scheduleReaderLayout();app.scheduleDialogFit();});
+document.fonts?.ready.then(()=>app.scheduleReaderLayout());
 
 document.addEventListener('pointerdown',e=>{if(!$('menu-popup').hidden&&!$('menu-popup').contains(e.target)&&e.target!==menuOrigin&&!menuOrigin?.contains(e.target))closeMenu(false);if(!$('choice-popup').hidden&&!$('choice-popup').contains(e.target)&&e.target!==choiceOrigin&&!choiceOrigin?.contains(e.target))closeChoices(false);});
 document.addEventListener('keydown',e=>{

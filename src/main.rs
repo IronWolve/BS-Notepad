@@ -52,6 +52,7 @@ struct App {
     root: PathBuf,
     smoke_started: Option<Instant>,
     settings: Settings,
+    preview_theme: Option<String>,
     documents: Documents,
     renderer: Renderer,
     fonts: Vec<fonts::FontFamily>,
@@ -101,7 +102,11 @@ impl App {
     }
 
     fn theme(&self) -> theme::Theme {
-        let mut t = theme::find(&self.settings.theme);
+        let mut t = theme::find(
+            self.preview_theme
+                .as_deref()
+                .unwrap_or(&self.settings.theme),
+        );
         // Nothing may end up unreadable, whatever the combination.
         t.fg = theme::guard(&t.fg, &t.bg, 4.5);
         t.dim = theme::guard(&t.dim, &t.panel, 4.5);
@@ -262,6 +267,7 @@ impl App {
         self.send_tabs();
         let payload = json!({
             "tab": self.id,
+            "themeId": t.id,
             "revision": self.edit_revision,
             "editing": self.editing,
             "editorScroll": self.editor_scroll,
@@ -472,6 +478,9 @@ impl App {
                     | "view_mode"
                     | "syntax_colour"
             );
+            if key == "theme" {
+                self.preview_theme = None;
+            }
             self.settings = updated;
             if key == "show_hidden" {
                 self.send_tree(self.tree_dir.clone());
@@ -759,6 +768,20 @@ impl App {
                     open_externally(url);
                 }
             }
+            "previewTheme" => {
+                if let Some(id) = value.get("theme").and_then(|v| v.as_str()) {
+                    if theme::builtin().iter().any(|theme| theme.id == id) {
+                        self.preview_theme = Some(id.to_string());
+                        self.run_js(format!(
+                            "window.app.themePreview({});",
+                            json!({
+                                "id":id,"token":value.get("token"),"theme":self.theme()
+                            })
+                        ));
+                        self.render_current(self.scroll);
+                    }
+                }
+            }
             "setting" => {
                 if let Some(key) = value.get("key").and_then(|k| k.as_str()) {
                     let new_value = value.get("value").cloned().unwrap_or(json!(null));
@@ -766,6 +789,8 @@ impl App {
                 }
             }
             "resetSettings" => {
+                self.preview_theme = None;
+                self.run_js("window.app.clearThemePreview();".into());
                 let old = self.settings.clone();
                 self.settings = Settings::default();
                 self.settings.recents = old.recents;
@@ -966,6 +991,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         root: root.clone(),
         smoke_started: std::env::var_os("EXIT_WHEN_READY").map(|_| started),
         settings,
+        preview_theme: None,
         renderer,
         fonts: font_list,
         window,

@@ -118,7 +118,7 @@ body.autoside #side.show,body.autoside #side:focus-within { transform:none; }
 #document-actions button:hover { background:var(--hover); color:var(--fg); }
 #document-actions button.on { background:var(--hover); color:var(--fg); border-color:var(--rule); }
 #doc { flex:1; overflow:auto; }
-article { width:100%; padding:24px 32px; font:calc(var(--body-size) * var(--zoom))/var(--line) var(--body-font); }
+article { width:var(--reader-width,100%); margin-left:var(--reader-offset,0px); padding:24px 32px; font:calc(var(--body-size) * var(--zoom))/var(--line) var(--body-font); }
 article a { color:var(--link); }
 article pre { overflow-x:auto; padding:14px 16px; border-radius:5px; position:relative; }
 article code,article pre { font-family:var(--code-font); font-size:calc(var(--code-size) * var(--zoom)); }
@@ -138,7 +138,7 @@ article pre:hover .copy,.copy:focus-visible { opacity:1; }
 #fm.show { display:block; }
 #options { display:none; position:absolute; inset:0; background:#0007; z-index:30; }
 #options.show { display:flex; align-items:center; justify-content:center; }
-#panel { width:min(900px,94vw); height:min(660px,90vh); min-width:480px; min-height:320px; resize:both; max-width:98vw; max-height:96vh; background:var(--bg); border:1px solid var(--rule); border-radius:8px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 18px 70px #0005; }
+#panel { width:min(1020px,calc(100vw - 32px)); height:min(660px,calc(100vh - 32px)); min-width:480px; min-height:320px; resize:both; max-width:98vw; max-height:96vh; background:var(--bg); border:1px solid var(--rule); border-radius:8px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 18px 70px #0005; }
 #phead { display:flex; align-items:center; gap:16px; padding:16px; border-bottom:1px solid var(--rule); background:var(--panel); }
 #phead h2 { margin:0; font-size:18px; font-weight:600; }
 #search { flex:1; min-width:0; background:var(--bg); border:1px solid var(--rule); color:var(--fg); border-radius:4px; padding:6px 10px; }
@@ -219,7 +219,7 @@ body.auto.popup-open #bar { transform:none; }
 #pfoot .grow { text-align:right; }
 #help-overlay { display:none; position:absolute; inset:0; z-index:35; background:#0007; align-items:center; justify-content:center; }
 #help-overlay.show { display:flex; }
-#help-panel { width:min(840px,94vw); height:min(650px,90vh); min-width:440px; min-height:340px; max-width:98vw; max-height:96vh; display:flex; flex-direction:column; resize:both; overflow:hidden; background:var(--bg); border:1px solid var(--rule); border-radius:10px; box-shadow:0 20px 70px #0005; }
+#help-panel { width:min(980px,calc(100vw - 32px)); height:min(650px,calc(100vh - 32px)); min-width:440px; min-height:340px; max-width:98vw; max-height:96vh; display:flex; flex-direction:column; resize:both; overflow:hidden; background:var(--bg); border:1px solid var(--rule); border-radius:10px; box-shadow:0 20px 70px #0005; }
 #help-head { display:flex; align-items:center; gap:17px; padding:19px 23px; border-bottom:1px solid var(--rule); background:var(--panel); }
 #help-logo { width:84px; height:84px; object-fit:contain; }
 #help-title { margin:0 0 5px; font-size:25px; }
@@ -262,7 +262,7 @@ body.maximized #resize-edges { display:none; }
 #b-theme .select-arrow { font-size:16px; }
 #bar #b-find { width:28px; padding:5px; }
 #bar #drag-region { display:flex; align-items:center; min-width:0; padding-left:10px; overflow:hidden; }
-#single-title { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); max-width:calc(100% - 480px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; color:color-mix(in srgb,var(--dim) 80%,var(--bg)); font-size:12px; font-weight:400; text-align:center; }
+#single-title { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); max-width:calc(100% - var(--title-clearance,520px)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; color:color-mix(in srgb,var(--dim) 80%,var(--bg)); font-size:12px; font-weight:400; text-align:center; }
 #doc,#editor textarea { scrollbar-width:none; -ms-overflow-style:none; }
 #doc::-webkit-scrollbar,#editor textarea::-webkit-scrollbar { width:0; height:0; display:none; }
 .popup .menu-brand { font-weight:650; min-height:38px; }
@@ -272,12 +272,6 @@ body.maximized #resize-edges { display:none; }
 #bar #document-actions button { width:28px; min-height:28px; padding:5px; opacity:.35; background:transparent; border-color:transparent; color:var(--dim); }
 #bar #document-actions button:hover,#bar #document-actions button:focus-visible { opacity:.95; background:var(--hover); }
 #bar #document-actions .button-label { display:none; }
-#side .pane { scrollbar-width:thin; scrollbar-color:color-mix(in srgb,var(--fg) 16%,var(--panel)) var(--panel); }
-#side .pane:hover { scrollbar-color:color-mix(in srgb,var(--fg) 28%,var(--panel)) var(--panel); }
-#side .pane::-webkit-scrollbar { width:5px; height:5px; }
-#side .pane::-webkit-scrollbar-track { background:var(--panel); }
-#side .pane::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 16%,var(--panel)); border-radius:5px; }
-#side .pane:hover::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 28%,var(--panel)); }
 
 #bar button.quiet-control,
 #bar #left-tools button.quiet-control,
@@ -299,6 +293,51 @@ body.maximized #resize-edges { display:none; }
 #bar #left-tools button.quiet-control[aria-expanded=true] {
   opacity:.95; background:var(--hover);
 }
+
+/* Controls keep a small, consistent gap. */
+#left-tools { gap:5px; }
+#bar #document-actions { gap:5px; }
+#window-controls { gap:4px; }
+.popup .menu-symbol { display:inline-flex; align-items:center; justify-content:center; flex:0 0 20px; width:20px; }
+.menu-symbol svg,.menu-check svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.menu-symbol img { width:23px; height:23px; object-fit:contain; }
+.popup .menu-check { display:inline-flex; width:16px; margin-left:4px; color:var(--fg); }
+#choice-popup { display:flex; flex-direction:column; overflow:hidden; }
+#choice-search { flex:0 0 auto; }
+#choice-list { flex:1 1 auto; min-height:0; max-height:none; overflow:auto; }
+#choice-hint { flex:0 0 auto; padding:9px 9px 5px; border-top:1px solid var(--rule); margin-top:4px; color:var(--dim); font-size:11px; }
+#choice-list button { flex:0 0 auto; }
+#choice-list .choice-label { flex:1; }
+.theme-swatch { width:23px; height:19px; flex:0 0 23px; border:1px solid; border-radius:4px; font-size:10px; display:inline-flex; align-items:center; justify-content:center; font-weight:600; }
+.choice-saved { width:14px; height:14px; display:inline-flex; }
+.choice-saved svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; }
+#help-panel { container-type:inline-size; }
+.shortcut-grid { display:grid; grid-template-columns:1fr; column-gap:24px; }
+@container (min-width:760px) {
+  .shortcut-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #help-content .shortcut-grid .shortcut { gap:12px; padding:7px 0; }
+  .shortcut-grid .shortcut > span { min-width:0; }
+  .shortcut-grid kbd { flex-shrink:0; }
+}
+article { overflow-wrap:anywhere; }
+article th,article td { overflow-wrap:normal; }
+.table-scroll { max-width:100%; overflow-x:auto; scrollbar-width:thin; scrollbar-color:color-mix(in srgb,var(--fg) 22%,transparent) transparent; }
+.table-scroll::-webkit-scrollbar { width:6px; height:6px; }
+.table-scroll::-webkit-scrollbar-track { background:transparent; }
+.table-scroll::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 26%,transparent); border-radius:8px; }
+#panel,#help-panel { max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); }
+/* Scroll tracks inherit their own surface; no system-colored troughs. */
+#side .pane,#sets,#help-content,#help-nav,#rail,#document-tabs,#choice-list,.popup,#fm,article pre {
+  scrollbar-width:thin;
+  scrollbar-color:color-mix(in srgb,var(--fg) 22%,transparent) transparent;
+}
+#side .pane:hover,#sets:hover,#help-content:hover,#help-nav:hover,#rail:hover,#document-tabs:hover,#choice-list:hover,.popup:hover,#fm:hover,article pre:hover {
+  scrollbar-color:color-mix(in srgb,var(--fg) 34%,transparent) transparent;
+}
+#side .pane::-webkit-scrollbar,#sets::-webkit-scrollbar,#help-content::-webkit-scrollbar,#help-nav::-webkit-scrollbar,#rail::-webkit-scrollbar,#document-tabs::-webkit-scrollbar,#choice-list::-webkit-scrollbar,.popup::-webkit-scrollbar,#fm::-webkit-scrollbar,article pre::-webkit-scrollbar { width:6px; height:6px; }
+#side .pane::-webkit-scrollbar-track,#sets::-webkit-scrollbar-track,#help-content::-webkit-scrollbar-track,#help-nav::-webkit-scrollbar-track,#rail::-webkit-scrollbar-track,#document-tabs::-webkit-scrollbar-track,#choice-list::-webkit-scrollbar-track,.popup::-webkit-scrollbar-track,#fm::-webkit-scrollbar-track,article pre::-webkit-scrollbar-track { background:transparent; }
+#side .pane::-webkit-scrollbar-thumb,#sets::-webkit-scrollbar-thumb,#help-content::-webkit-scrollbar-thumb,#help-nav::-webkit-scrollbar-thumb,#rail::-webkit-scrollbar-thumb,#document-tabs::-webkit-scrollbar-thumb,#choice-list::-webkit-scrollbar-thumb,.popup::-webkit-scrollbar-thumb,#fm::-webkit-scrollbar-thumb,article pre::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 26%,transparent); border-radius:8px; }
+#side .pane::-webkit-scrollbar-button,#sets::-webkit-scrollbar-button,#help-content::-webkit-scrollbar-button,#choice-list::-webkit-scrollbar-button,.popup::-webkit-scrollbar-button { display:none; width:0; height:0; }
 </style></head><body>
 
 <div id="hot"></div>
@@ -399,7 +438,7 @@ body.maximized #resize-edges { display:none; }
   <footer id="help-foot"><a id="help-github" href="#">GitHub · IronWolve ↗</a><span>F1 opens Help</span><button id="help-done">Done</button></footer>
 </section></div>
 <div id="menu-popup" class="popup" role="menu" hidden></div>
-<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-list" role="listbox"></div></div>
+<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-list" role="listbox"></div><div id="choice-hint" hidden>Hover to preview · Click to save</div></div>
 <div id="resize-edges" aria-hidden="true"><i data-direction="n"></i><i data-direction="s"></i><i data-direction="e"></i><i data-direction="w"></i><i data-direction="nw"></i><i data-direction="ne"></i><i data-direction="sw"></i><i data-direction="se"></i></div>
 <script>
 const $ = id => document.getElementById(id);
@@ -764,6 +803,7 @@ const app = {
     if (on) $("text").focus();
     if (notify) send({cmd:"viewState"});
     app.scheduleMap?.();
+    app.scheduleReaderLayout?.();
     if ($("find").classList.contains("show")) runFind($("find-text").value);
   },
   options(open) {
@@ -839,7 +879,7 @@ const app = {
         b.dataset.theme = t.id;
         b.title = t.name; b.setAttribute("aria-label", t.name); b.setAttribute("aria-pressed", String(t.id === value));
         b.classList.toggle("on", t.id === value);
-        b.onclick = () => send({ cmd:"setting", key:"theme", value:t.id });
+        b.onclick = () => app.commitTheme(t.id);
         control.appendChild(b);
       }
     } else if (CHOICES[key]) {
@@ -1012,7 +1052,7 @@ $("b-opts").onclick = () => app.options(true);
 $("opt-x").onclick = () => app.options(false);
 $("options").onclick = e => { if (e.target === $("options")) app.options(false); };
 $("opt-close").onclick = () => app.options(false);
-$("opt-reset").onclick = () => { if ($("opt-reset").dataset.confirm) { send({cmd:"resetSettings"}); $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; } else { $("opt-reset").dataset.confirm="1"; $("opt-reset").textContent="Confirm reset"; } };
+$("opt-reset").onclick = () => { if ($("opt-reset").dataset.confirm) { app.clearThemePreview(); send({cmd:"resetSettings"}); $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; } else { $("opt-reset").dataset.confirm="1"; $("opt-reset").textContent="Confirm reset"; } };
 $("search").oninput = () => app.drawOptions();
 $("b-zoomreset").onclick = () => send({cmd:"setting",key:"zoom",value:1});
 $("b-zoomin").onclick = () => send({ cmd:"setting", key:"zoom", value:Math.min(3, (state.settings.zoom || 1) + 0.1) });
