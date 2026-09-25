@@ -20,7 +20,7 @@ button { -webkit-tap-highlight-color:transparent; }
 [hidden] { display:none!important; }
 svg.ui-icon { width:16px; height:16px; flex:0 0 16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
 #hot { position:absolute; top:0; left:0; right:0; height:6px; z-index:5; }
-#bar { min-height:48px; display:flex; align-items:center; gap:5px; padding:7px 12px; background:var(--bg); border-bottom:1px solid transparent; }
+#bar { position:relative; min-height:48px; display:flex; align-items:center; gap:5px; padding:7px 12px; background:var(--bg); border-bottom:1px solid transparent; }
 #bar button,#bar select { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:32px; padding:5px 9px; color:var(--fg); background:transparent; border:1px solid transparent; border-radius:5px; white-space:nowrap; }
 #bar button:hover,#bar select:hover { background:var(--hover); }
 #bar button.on { background:var(--selected); }
@@ -53,13 +53,16 @@ body.autoside #side.show,body.autoside #side:focus-within { transform:none; }
 #grip { position:absolute; top:0; right:-3px; width:6px; height:100%; cursor:col-resize; z-index:7; }
 #grip:hover,#grip.dragging { background:var(--accent); opacity:.6; }
 #explorer-head { display:flex; align-items:center; min-height:40px; padding:0 10px 0 15px; gap:4px; }
-#explorer-head strong { font-size:12px; font-weight:600; flex:1; }
+#explorer-head strong { font-size:12px; font-weight:400; color:color-mix(in srgb,var(--dim) 80%,var(--panel)); flex:1; }
 .explorer-action { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; padding:5px; background:transparent; color:var(--dim); border:0; border-radius:4px; }
 .explorer-action:hover { color:var(--fg); background:var(--hover); }
-#sidepin.on { color:var(--fg); background:var(--hover); }
-#tabs { display:flex; padding:0 10px; gap:12px; border-bottom:1px solid var(--rule); }
-#tabs button { display:flex; align-items:center; gap:5px; background:transparent; color:var(--dim); border:0; border-bottom:2px solid transparent; padding:7px 2px 8px; font-size:12px; }
-#tabs button.on { color:var(--fg); border-bottom-color:var(--accent); }
+#explorer-head .explorer-action { opacity:.5; transition:opacity .12s ease; }
+#explorer-head .explorer-action:hover,#explorer-head .explorer-action:focus-visible { opacity:1; color:var(--fg); }
+#sidepin.on { color:var(--dim); background:var(--hover); }
+#tabs { display:flex; padding:0 10px; gap:12px; border-bottom:1px solid color-mix(in srgb,var(--rule) 60%,var(--panel)); }
+#tabs button { display:flex; align-items:center; gap:5px; background:transparent; color:color-mix(in srgb,var(--dim) 80%,var(--panel)); border:0; border-bottom:2px solid transparent; padding:7px 2px 8px; font-size:12px; }
+#tabs button.on { color:var(--dim); border-bottom-color:color-mix(in srgb,var(--accent) 45%,var(--panel)); }
+#tabs button:hover,#tabs button:focus-visible { color:var(--fg); }
 #tabs .ui-icon { width:13px; height:13px; flex-basis:13px; }
 #file-tools { padding:10px 12px 6px; }
 #filter-wrap { position:relative; display:flex; align-items:center; }
@@ -259,7 +262,7 @@ body.maximized #resize-edges { display:none; }
 #b-theme .select-arrow { font-size:16px; }
 #bar #b-find { width:28px; padding:5px; }
 #bar #drag-region { display:flex; align-items:center; min-width:0; padding-left:10px; overflow:hidden; }
-#single-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; color:var(--dim); font-size:12px; font-weight:400; }
+#single-title { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); max-width:calc(100% - 480px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; color:color-mix(in srgb,var(--dim) 80%,var(--bg)); font-size:12px; font-weight:400; text-align:center; }
 #doc,#editor textarea { scrollbar-width:none; -ms-overflow-style:none; }
 #doc::-webkit-scrollbar,#editor textarea::-webkit-scrollbar { width:0; height:0; display:none; }
 .popup .menu-brand { font-weight:650; min-height:38px; }
