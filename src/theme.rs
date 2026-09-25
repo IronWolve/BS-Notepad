@@ -37,6 +37,22 @@ fn t(
 
 pub fn builtin() -> Vec<Theme> {
     vec![
+        t("bold-crimson", "Crimson", true, "#A03C3C", "#fff7f0", "#933737", "#A03C3C",
+          "#b15e5c", "#fff7f0", "#f1dbd5", "#fff7f0", "Base16OceanDark"),
+        t("bold-tangerine", "Tangerine", false, "#C85F3C", "#101416", "#cc6c4c", "#C85F3C",
+          "#a85337", "#101416", "#322726", "#101416", "Github"),
+        t("bold-sunflower", "Sunflower", false, "#FFDE30", "#101416", "#ffe141", "#FFDE30",
+          "#d5bb2d", "#101416", "#3a3a24", "#101416", "Github"),
+        t("bold-emerald", "Emerald", false, "#388E70", "#101416", "#48977b", "#388E70",
+          "#327a62", "#101416", "#1c2e2e", "#101416", "Github"),
+        t("bold-turquoise", "Turquoise", false, "#58C9B9", "#101416", "#65cdbf", "#58C9B9",
+          "#4caa9e", "#101416", "#213739", "#101416", "Github"),
+        t("bold-cobalt", "Cobalt", true, "#1E3F66", "#fff7f0", "#1c3a5e", "#1E3F66",
+          "#46607f", "#fff7f0", "#dddbdb", "#fff7f0", "Base16OceanDark"),
+        t("bold-violet", "Violet", true, "#8C5D91", "#fff7f0", "#815685", "#8C5D91",
+          "#a179a2", "#fff7f0", "#eee0e2", "#fff7f0", "Base16OceanDark"),
+        t("bold-pink", "Pink", false, "#E4707C", "#101416", "#e67b86", "#E4707C",
+          "#bf616c", "#101416", "#362930", "#101416", "Github"),
         t("rose-stone", "Rose Stone", false, "#FFF7F7", "#4A1C1C", "#FFE4E4", "#FFF7F7",
           "#FFD4D4", "#A03C3C", "#4A1C1C", "#A03C3C", "Github"),
         t("warm-clay", "Warm Clay", false, "#F8E3C4", "#2C1810", "#E6C89B", "#F8E3C4",

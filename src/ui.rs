@@ -355,6 +355,15 @@ article th,article td { overflow-wrap:normal; }
 #choice-popup.theme-grid #choice-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; }
 #choice-popup.theme-grid #choice-list button { min-width:0; }
 @media(max-width:460px) { #choice-popup.theme-grid #choice-list { grid-template-columns:1fr; } }
+.theme-setting .sw { display:flex; flex-direction:column; align-items:stretch; }
+.theme-swatches { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.theme-swatches button { min-width:0; }
+@media(max-width:700px) { .theme-swatches { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.theme-swatches button[hidden] { display:none; }
+.theme-filters { display:flex; gap:4px; padding:3px 0 7px; }
+.theme-setting .theme-filters button,#choice-families .theme-filters button { flex:1; width:auto; min-height:28px; padding:5px 10px; border:0; border-radius:6px; background:transparent; color:var(--dim); font:inherit; justify-content:center; }
+.theme-setting .theme-filters button[aria-pressed=true],#choice-families .theme-filters button[aria-pressed=true] { color:var(--fg); background:color-mix(in srgb,var(--fg) 10%,transparent); }
+.theme-filters button:hover { background:var(--hover); }
 </style></head><body>
 
 <div id="hot"></div>
@@ -454,7 +463,7 @@ article th,article td { overflow-wrap:normal; }
   <footer id="help-foot"><a id="help-github" href="#">GitHub · IronWolve ↗</a><span>F1 opens Help</span><button id="help-done">Done</button></footer>
 </section></div>
 <div id="menu-popup" class="popup" role="menu" hidden></div>
-<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-list" role="listbox"></div><div id="choice-hint" hidden>Hover to preview · Click to save</div></div>
+<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-families" hidden></div><div id="choice-list" role="listbox"></div><div id="choice-hint" hidden>Hover to preview · Click to save</div></div>
 <div id="resize-edges" aria-hidden="true"><i data-direction="n"></i><i data-direction="s"></i><i data-direction="e"></i><i data-direction="w"></i><i data-direction="nw"></i><i data-direction="ne"></i><i data-direction="sw"></i><i data-direction="se"></i></div>
 <script>
 const $ = id => document.getElementById(id);
@@ -888,6 +897,9 @@ const app = {
       control.className = "sw";
       row.classList.add("theme-setting");
       control.setAttribute("role", "group");
+      const swatches=document.createElement("div");swatches.className="theme-swatches";
+      const filter=()=>{for(const b of swatches.children)b.hidden=themeFamily!=="all"&&app.themeFamily(b.dataset.theme)!==themeFamily;app.scheduleDialogFit?.();};
+      control.appendChild(app.themeFilters(filter));
       for (const t of state.themes) {
         const b = document.createElement("button");
         b.style.background = t.bg;
@@ -898,8 +910,9 @@ const app = {
         b.title = t.name; b.setAttribute("aria-label", t.name); b.setAttribute("aria-pressed", String(t.id === value));
         b.classList.toggle("on", t.id === value);
         b.onclick = () => app.commitTheme(t.id);
-        control.appendChild(b);
+        swatches.appendChild(b);
       }
+      control.appendChild(swatches);filter();
     } else if (key === "text_contrast") {
       control = document.createElement("div"); control.className = "contrast-control";
       const slider = document.createElement("input"); slider.type = "range";

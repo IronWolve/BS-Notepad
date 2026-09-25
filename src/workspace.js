@@ -2,6 +2,7 @@
 const editorNodes = new Map(), pendingViews = new Map();
 let mapTimer, mapFrame, mapHeight = 0, helpFocus, selectedHelp = 'start';
 let menuOrigin, choiceOrigin, choiceOptions = [], choiceValue, choiceChange, choicePreview, choiceTheme=false;
+let themeFamily = "all";
 let themePreviewTimer, themePreviewToken=0, readerFrame, dialogFrame;
 let zoomTarget=null, zoomTimer=null, wheelRemainder=0, lastZoomWheel=0;
 const cleanPath = path => normalizedPath(path || '');
@@ -214,12 +215,23 @@ app.selectControl = (options,value,change,label) => {
   labelChoice(button,options.find(o=>o.value===value)?.label||String(value));
   button.onclick=()=>openChoices(button,options,value,change);return button;
 };
+const softThemeIds = new Set(['rose-stone','warm-clay','cocoa','parchment','jade','lagoon','porcelain','lavender-clay','blossom','pewter','ink','marble']);
+app.themeFamily = id => id.startsWith('bold-') ? 'bold' : softThemeIds.has(id) ? 'soft' : 'classic';
+app.themeFilters = changed => {
+  const bar=document.createElement('div');bar.className='theme-filters';bar.setAttribute('role','group');bar.setAttribute('aria-label','Theme collection');
+  for(const [value,label] of [['all','All'],['bold','Bold'],['soft','Soft'],['classic','Classic']]) {
+    const button=document.createElement('button');button.type='button';button.textContent=label;button.dataset.family=value;button.setAttribute('aria-pressed',String(themeFamily===value));
+    button.onclick=()=>{themeFamily=value;for(const b of bar.children)b.setAttribute('aria-pressed',String(b.dataset.family===value));changed();};
+    bar.appendChild(button);
+  }
+  return bar;
+};
 function layoutChoices() {
   const popup=$('choice-popup');if(popup.hidden||!choiceOrigin)return;
   const rect=choiceOrigin.getBoundingClientRect(),down=innerHeight-rect.bottom-14,up=rect.top-14;
   const above=down<180&&up>down,available=Math.max(80,above?up:down);
   popup.style.maxHeight=available+'px';
-  $('choice-list').style.maxHeight=Math.max(40,available-12-($('choice-search').hidden?0:$('choice-search').offsetHeight+5)-($('choice-hint').hidden?0:$('choice-hint').offsetHeight+4))+'px';
+  $('choice-list').style.maxHeight=Math.max(40,available-12-($('choice-search').hidden?0:$('choice-search').offsetHeight+5)-($('choice-hint').hidden?0:$('choice-hint').offsetHeight+4)-($('choice-families').hidden?0:$('choice-families').offsetHeight+4))+'px';
   popup.style.left=Math.max(8,Math.min(rect.left,innerWidth-popup.offsetWidth-8))+'px';
   popup.style.top=Math.max(8,above?rect.top-popup.offsetHeight-6:rect.bottom+6)+'px';
 }
@@ -229,7 +241,7 @@ function markChoice(value) {
 }
 function drawChoices() {
   const query=$('choice-search').value.toLowerCase(),list=$('choice-list');list.replaceChildren();
-  const choices=choiceOptions.filter(o=>o.label.toLowerCase().includes(query));
+  const choices=choiceOptions.filter(o=>o.label.toLowerCase().includes(query)&&(!choiceTheme||query||themeFamily==='all'||app.themeFamily(o.value)===themeFamily));
   for(const option of choices) {
     const button=document.createElement('button');button.dataset.value=option.value;button.setAttribute('role','option');button.setAttribute('aria-selected',String(option.value===choiceValue));
     if(choiceTheme){
@@ -246,6 +258,7 @@ function drawChoices() {
 }
 function openChoices(anchor,options,value,change,preview=null) {
   closeMenu(false);closeChoices(false);choiceOrigin=anchor;choiceOptions=options;choiceValue=value;choiceChange=change;choicePreview=preview;choiceTheme=!!preview;
+  $('choice-families').hidden=!choiceTheme;$('choice-families').replaceChildren();if(choiceTheme)$('choice-families').appendChild(app.themeFilters(drawChoices));
   anchor.setAttribute('aria-expanded','true');$('choice-search').value='';$('choice-search').hidden=options.length<(choiceTheme?19:9);$('choice-hint').hidden=!choiceTheme;
   const popup=$('choice-popup');popup.classList.toggle('theme-grid',choiceTheme);popup.style.width=Math.max(choiceTheme?440:220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popup.hidden=false;
   drawChoices();layoutChoices();syncPopupState();
@@ -293,7 +306,7 @@ const HELP = [
   'Use the Document map button in the toolbar, the main menu, or Options → Editor to show or hide it. With the map focused, arrow keys and Page Up / Page Down scroll the document.'
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
-  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Twelve additional color families range from Rose Stone and Jade to Ink and Marble. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
+  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover eight saturated colors, including yellow, orange, pink and purple. Use the Bold, Soft and Classic filters to browse the collections. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
   'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
@@ -472,7 +485,7 @@ document.addEventListener('keydown',e=>{
  if(popup){
    if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();popup===$('menu-popup')?closeMenu():closeChoices();return;}
    if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-     e.preventDefault();e.stopImmediatePropagation();const buttons=[...popup.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement);
+     e.preventDefault();e.stopImmediatePropagation();const buttons=[...popup.querySelectorAll(popup.id==='choice-popup'?'#choice-list button:not(:disabled)':'button:not(:disabled)')],index=buttons.indexOf(document.activeElement);
      const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;buttons[next]?.focus();return;
    }
    if(e.key==='Enter'&&document.activeElement===$('choice-search')){e.preventDefault();e.stopImmediatePropagation();$('choice-list').querySelector('button')?.click();return;}
