@@ -32,7 +32,18 @@
   check($('text').value===draft,'theme retains draft');
   app.chooseTheme();
   check(!$('choice-popup').hidden&&$('choice-list').children.length>=12,'themed dropdown');
+  const sage=$('choice-list').querySelector('[data-value="sage"]');
+  check(!!sage,'preview theme choice');
+  sage.dispatchEvent(new MouseEvent('mouseenter'));
+  await until(()=>state.previewTheme==='sage'&&document.documentElement.style.getPropertyValue('--bg')===state.themes.find(t=>t.id==='sage').bg,'native theme preview');
+  check(state.settings.theme==='mist','hover preserves saved theme');
+  sage.dispatchEvent(new MouseEvent('mouseleave'));
   closeChoices();
+  check(state.previewTheme==='sage','mouse-off preserves preview');
+  check($('text').value===draft,'preview preserves draft');
+  app.chooseTheme();
+  $('choice-list').querySelector('[data-value="sage"]').click();
+  await until(()=>state.settings.theme==='sage'&&!state.previewTheme,'theme click commits');
   send({cmd:'setting',key:'minimap',value:true});
   await until(()=>!$('minimap').hidden&&$('text').scrollHeight>$('text').clientHeight,'map layout');
   await sleep(150);
