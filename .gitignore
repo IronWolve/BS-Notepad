@@ -12,6 +12,7 @@
 !/src/assets.rs
 !/src/documents.rs
 !/src/fonts.rs
+!/src/formatting.rs
 !/src/icon.rs
 !/src/instance.rs
 !/src/log.rs

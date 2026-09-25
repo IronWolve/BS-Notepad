@@ -8,6 +8,11 @@
   check(state.name==='BS Notepad','display name');
   check(!!document.querySelector('#pane-files > div'),'file tree');
   const original=state.activeTab,source=$('text').value;
+  if(source.includes('rendering-smoke')) {
+    const span=[...$('article').querySelectorAll('span')].find(node=>node.textContent==='rendering-smoke');
+    check(!!span&&getComputedStyle(span).color==='rgb(34, 197, 94)','embedded HTML color');
+    check($('article').querySelector('h2 strong')?.textContent==='Formatted','heading formatting');
+  }
   $('tab-new').click();
   await until(()=>state.tabs.length===2&&state.activeTab!==original,'new tab');
   const draftId=state.activeTab;

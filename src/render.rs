@@ -240,7 +240,7 @@ impl Renderer {
 
         let mut code = String::new();
         let mut language: Option<String> = None;
-        let mut heading: Option<(u8, String)> = None;
+        let mut heading: Option<(u8, String, usize)> = None;
         let mut image: Option<(String, String, String)> = None; // src, title, alt
 
         for event in parser {
@@ -259,20 +259,20 @@ impl Renderer {
                 }
 
                 Event::Start(Tag::Heading { level, .. }) => {
-                    heading = Some((level_number(level), String::new()));
+                    heading = Some((level_number(level), String::new(), events.len()));
+                    events.push(Event::Html(String::new().into()));
                 }
                 Event::End(TagEnd::Heading(_)) => {
-                    if let Some((level, text)) = heading.take() {
+                    if let Some((level, text, start)) = heading.take() {
                         let anchor = anchor_for(&text, &mut used_anchors);
                         outline.push(Heading {
                             level,
                             text: text.clone(),
                             anchor: anchor.clone(),
                         });
-                        events.push(Event::Html(
-                            format!("<h{0} id=\"{1}\">{2}</h{0}>", level, anchor, escape(&text))
-                                .into(),
-                        ));
+                        events[start] =
+                            Event::Html(format!("<h{} id=\"{}\">", level, anchor).into());
+                        events.push(Event::Html(format!("</h{}>", level).into()));
                     }
                 }
 
@@ -299,7 +299,11 @@ impl Renderer {
                     }
                 }
 
-                Event::Html(raw) | Event::InlineHtml(raw) => events.push(Event::Text(raw)),
+                Event::Html(raw) | Event::InlineHtml(raw) => {
+                    if image.is_none() {
+                        events.push(Event::Html(crate::formatting::html(&raw, base).into()));
+                    }
+                }
                 Event::Start(Tag::Link {
                     dest_url, title, ..
                 }) => {
@@ -329,23 +333,34 @@ impl Renderer {
                 Event::Text(text) => {
                     if language.is_some() {
                         code.push_str(&text);
-                    } else if let Some((_, buffer)) = heading.as_mut() {
-                        buffer.push_str(&text);
-                    } else if let Some((_, _, alt)) = image.as_mut() {
-                        alt.push_str(&text);
                     } else {
-                        events.push(Event::Text(text));
+                        if let Some((_, buffer, _)) = heading.as_mut() {
+                            buffer.push_str(&text);
+                        }
+                        if let Some((_, _, alt)) = image.as_mut() {
+                            alt.push_str(&text);
+                        } else {
+                            events.push(Event::Text(text));
+                        }
                     }
                 }
                 Event::Code(text) => {
-                    if let Some((_, buffer)) = heading.as_mut() {
+                    if let Some((_, buffer, _)) = heading.as_mut() {
                         buffer.push_str(&text);
+                    }
+                    if let Some((_, _, alt)) = image.as_mut() {
+                        alt.push_str(&text);
                     } else {
                         events.push(Event::Code(text));
                     }
                 }
                 other => {
-                    if heading.is_none() && image.is_none() {
+                    if matches!(other, Event::SoftBreak | Event::HardBreak) {
+                        if let Some((_, buffer, _)) = heading.as_mut() {
+                            buffer.push(' ');
+                        }
+                    }
+                    if image.is_none() {
                         events.push(other);
                     }
                 }

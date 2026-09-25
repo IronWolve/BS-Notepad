@@ -30,7 +30,7 @@ if [ ! -x "$BIN" ]; then bad "rename smoke test" "no release build at tmp/target
   WORK="$ROOT/tmp/rename-check/$(date +%s)-wombat"
   mkdir -p "$WORK"
   cp "$BIN" "$WORK/"
-  printf '# Renamed\n\nRunning from a differently named directory.\n' > "$WORK/doc.md"
+  printf '# Renamed\n\nRunning from a differently named directory.\n\n<span style="color:#22c55e">rendering-smoke</span>\n\n## **Formatted** heading\n' > "$WORK/doc.md"
   # DISPLAY alone is not enough: with WAYLAND_DISPLAY set, GTK ignores the
   # virtual display and opens a real window on the desktop.
   OUT=$(cd "$WORK" && env -u WAYLAND_DISPLAY GDK_BACKEND=x11 XDG_SESSION_TYPE=x11 \

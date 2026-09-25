@@ -5,6 +5,7 @@
 mod assets;
 mod documents;
 mod fonts;
+mod formatting;
 mod icon;
 mod instance;
 mod log;

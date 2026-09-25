@@ -1,10 +1,11 @@
 [package]
 name = "bs-notepad"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 homepage = "https://github.com/IronWolve"
 
 [dependencies]
+html5ever = "0.29.1"
 fontdb = "0.24.0"
 pulldown-cmark = "0.13"
 rfd = "0.17.2"

@@ -121,7 +121,7 @@ article pre { overflow-x:auto; padding:14px 16px; border-radius:5px; position:re
 article code,article pre { font-family:var(--code-font); font-size:calc(var(--code-size) * var(--zoom)); }
 article pre.plain { background:var(--panel); }
 article table { border-collapse:collapse; }
-article td,article th { border:1px solid var(--rule); padding:5px 10px; }
+article td,article th { border:1px solid color-mix(in srgb,var(--rule) 60%,var(--bg)); padding:5px 10px; }
 article img { max-width:100%; }
 article h1,article h2,article h3 { line-height:1.3; }
 article mark { background:var(--accent); color:var(--bg); }

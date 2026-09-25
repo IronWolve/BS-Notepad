@@ -242,3 +242,108 @@ fn help_logo_is_embedded_and_does_not_need_a_document_scope() {
     assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
     assert_eq!(root::app_name(), "BS Notepad");
 }
+
+#[test]
+fn markdown_preserves_report_colors_and_formatted_headings() {
+    let renderer = Renderer::new();
+    let source = r##"# Ranked Local LLM Results
+
+Campaign: 189 fixed single-request tests across 63 profiles.
+
+<span style="color:#22c55e">🟩</span> all three prompts completed · <span style="color:#eab308">🟨</span> partial · <span style="color:#ef4444">🟥</span> launch/health failure · 🔍 manual response review required
+
+> Quality is not honestly reducible to tok/s. This report uses response capture and test completion as an automated signal, then preserves raw outputs for review.
+
+## A **bold** `code` [link](https://example.com) and <span style="color:#22c55e">green</span> heading
+
+<div style="color: rgb(20, 90, 120); font-weight:600"><em>Embedded formatting</em><br>Second line</div>
+
+Literal code: `<span style="color:red">example</span>`.
+"##;
+    let doc = renderer.render(
+        Some(Path::new("report.md")),
+        source,
+        &Settings::default(),
+        &theme::find("light"),
+    );
+    for (color, marker) in [("#22c55e", "🟩"), ("#eab308", "🟨"), ("#ef4444", "🟥")] {
+        assert!(
+            doc.html.contains(&format!(
+                "<span style=\"color:{}\">{}</span>",
+                color, marker
+            )),
+            "{} marker",
+            marker
+        );
+    }
+    assert!(doc.html.contains("<strong>bold</strong> <code>code</code>"));
+    assert!(doc.html.contains("data-external=\"1\""));
+    assert!(doc
+        .html
+        .contains("<span style=\"color:#22c55e\">green</span> heading</h2>"));
+    assert_eq!(doc.outline[1].text, "A bold code link and green heading");
+    assert!(doc
+        .html
+        .contains("<em>Embedded formatting</em><br>Second line"));
+    assert!(doc.html.contains("<code>&lt;span style="));
+    if let Some(path) = std::env::var_os("RENDER_PREVIEW") {
+        let path = PathBuf::from(path);
+        std::fs::write(&path, &doc.html).unwrap();
+        std::fs::write(path.with_extension("md"), source).unwrap();
+    }
+}
+
+#[test]
+fn embedded_html_keeps_formatting_but_drops_app_hooks_and_layout_overrides() {
+    let html = formatting::html(
+        r##"<span id="text" class="on" onclick="window.ipc.postMessage('quit')" style="position:fixed;inset:0;z-index:999;color:&#35;22c55e;background:url(https://invalid.example);font-weight:bold">Green</span><input type="checkbox" checked onclick="evil()"><input type="text" autofocus><svg onload="evil()"><a href="java&#10;script:evil()">bad</a></svg>"##,
+        None,
+    );
+    assert!(html.contains("<span style=\"color:#22c55e;font-weight:bold\">Green</span>"));
+    assert!(html.contains("<input type=\"checkbox\" disabled checked>"));
+    for forbidden in [
+        "onclick",
+        "onload",
+        "autofocus",
+        "id=",
+        "class=",
+        "position:",
+        "z-index",
+        "url(",
+        "type=\"text\"",
+        "href=\"javascript",
+        "<svg",
+    ] {
+        assert!(!html.contains(forbidden), "unexpected {}", forbidden);
+    }
+}
+
+#[test]
+fn embedded_html_links_and_images_use_existing_document_routes() {
+    let html = formatting::html(
+        r#"<a href="HTTPS://example.com/read?a=1&amp;b=2" target="_self">Web</a><a href="next.md">Local</a><img src="images/picture.png" alt="A &amp; B" width="80" onerror="evil()">"#,
+        Some(Path::new("notes")),
+    );
+    assert!(html.contains("href=\"https://example.com/read?a=1&amp;b=2\" data-external=\"1\""));
+    assert!(html.contains(&format!(
+        "data-open=\"{}\"",
+        Path::new("notes").join("next.md").display()
+    )));
+    assert!(
+        html.contains("src=\"asset://localhost/notes/images/picture.png\"")
+            || html.contains("src=\"http://asset.localhost/notes/images/picture.png\"")
+    );
+    assert!(html.contains("alt=\"A &amp; B\" width=\"80\""));
+    assert!(!html.contains("onerror"));
+}
+
+#[test]
+fn inline_formatting_inside_headings_keeps_links_and_alt_text_in_the_heading() {
+    let renderer = Renderer::new();
+    let doc = renderer.render(Some(Path::new("headings.md")), "## Read *this* [guide](next.md) ![badge](badge.png)\n\n## Read *this* [guide](next.md) ![badge](badge.png)", &Settings::default(), &theme::find("dark"));
+    assert_eq!(doc.outline[0].text, "Read this guide badge");
+    assert_ne!(doc.outline[0].anchor, doc.outline[1].anchor);
+    assert!(doc.html.contains("Read <em>this</em> <a"));
+    assert!(doc.html.contains("alt=\"badge\""));
+    assert_eq!(doc.html.matches("</h2>").count(), 2);
+}
