@@ -73,6 +73,11 @@ pub fn url_for(target: &str, base: Option<&Path>) -> String {
     }
 }
 
+pub fn brand_url() -> &'static str {
+    if cfg!(target_os = "windows") { "http://asset.localhost/__ui/logo.png" }
+    else { "asset://localhost/__ui/logo.png" }
+}
+
 fn mime_for(path: &Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref() {
         Some("png") => "image/png",
@@ -95,6 +100,9 @@ pub fn serve(uri: &str) -> (Vec<u8>, &'static str, u16) {
         .unwrap_or(uri);
     let path_part = path_part.split_once('/').map(|(_, rest)| rest).unwrap_or("");
     let decoded = decode(path_part.split('?').next().unwrap_or(""));
+    if decoded.trim_start_matches('/') == "__ui/logo.png" {
+        return (include_bytes!("../assets/brand.png").to_vec(), "image/png", 200);
+    }
 
     let mut candidate = PathBuf::from(&decoded);
     if !candidate.is_absolute() {

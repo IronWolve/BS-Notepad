@@ -10,6 +10,7 @@
 !/src/
 /src/*
 !/src/assets.rs
+!/src/documents.rs
 !/src/fonts.rs
 !/src/icon.rs
 !/src/instance.rs
@@ -23,8 +24,14 @@
 !/src/tray.rs
 !/src/tree.rs
 !/src/ui.rs
+!/src/workspace.js
+!/src/smoke.js
 !/scripts/
 /scripts/*
 !/scripts/build.sh
 !/scripts/check-portable.sh
 !/scripts/register-file-types.ps1
+
+!/assets/
+/assets/*
+!/assets/brand.png

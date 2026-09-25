@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "bs-notepad"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "fontdb",
  "pulldown-cmark",
@@ -119,6 +119,7 @@ dependencies = [
  "tao",
  "tray-icon",
  "two-face",
+ "windows-sys 0.61.2",
  "wry",
 ]
 

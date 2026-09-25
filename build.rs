@@ -3,6 +3,15 @@ mod icon;
 use std::{env, fs, path::PathBuf, process::Command};
 fn main() {
     println!("cargo:rerun-if-changed=src/icon.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=assets/brand.png");
+    let manifest = fs::read_to_string("Cargo.toml").unwrap();
+    let display_name = manifest
+        .lines()
+        .find_map(|line| line.strip_prefix("display-name = "))
+        .map(|value| value.trim_matches('"'))
+        .expect("display-name is required");
+    println!("cargo:rustc-env=APP_DISPLAY_NAME={}", display_name);
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let sizes = [16u32, 24, 32, 48, 64, 128, 256];
     let mut ico = vec![0, 0, 1, 0, sizes.len() as u8, 0];
@@ -47,8 +56,8 @@ BEGIN
  BEGIN
   BLOCK "040904B0"
   BEGIN
-   VALUE "FileDescription", "{name}"
-   VALUE "ProductName", "{name}"
+   VALUE "FileDescription", "{display_name}"
+   VALUE "ProductName", "{display_name}"
    VALUE "FileVersion", "{version}"
    VALUE "ProductVersion", "{version}"
    VALUE "OriginalFilename", "{name}.exe"

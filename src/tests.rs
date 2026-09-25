@@ -187,3 +187,58 @@ fn contrast_guard_chooses_readable_text_on_middle_gray() {
     let foreground = theme::guard("#999999", background, 4.5);
     assert!(theme::contrast(&foreground, background) >= 4.5);
 }
+
+#[test]
+fn tabs_keep_independent_drafts_and_view_state() {
+    let mut tabs = Documents::new(Document::new(
+        Some(PathBuf::from("first.md")),
+        "First".into(),
+    ));
+    tabs.current_mut().edit("First draft".into());
+    tabs.current_mut().editing = true;
+    tabs.current_mut().scroll = 0.4;
+    tabs.current_mut().selection_start = 3;
+    let first = tabs.current().id;
+    tabs.insert(Document::new(
+        Some(PathBuf::from("second.md")),
+        "Second".into(),
+    ));
+    let second = tabs.current().id;
+    tabs.current_mut().edit("Second draft".into());
+    assert!(tabs.activate(first));
+    assert_eq!(tabs.current().source, "First draft");
+    assert_eq!(tabs.current().saved_source, "First");
+    assert!(tabs.current().dirty && tabs.current().editing);
+    assert_eq!(tabs.current().scroll, 0.4);
+    assert_eq!(tabs.current().selection_start, 3);
+    assert!(tabs.activate(second));
+    assert_eq!(tabs.current().source, "Second draft");
+    assert_eq!(tabs.find_path(Path::new("first.md")), Some(first));
+}
+#[test]
+fn replacing_or_closing_tabs_retires_stale_document_ids() {
+    let mut tabs = Documents::new(Document::new(None, "Old".into()));
+    let old = tabs.current().id;
+    tabs.replace(Document::new(None, "New".into()));
+    assert_ne!(tabs.current().id, old);
+    assert!(tabs.get_mut(old).is_none());
+    let first = tabs.current().id;
+    tabs.insert(Document::new(None, "Other".into()));
+    let second = tabs.current().id;
+    tabs.remove(first);
+    assert_eq!(tabs.current().id, second);
+    tabs.remove(second);
+    assert_eq!(tabs.tabs.len(), 1);
+    assert!(tabs.current().source.is_empty());
+    assert!(tabs.current().editing);
+    assert!(!tabs.current().dirty);
+    assert_ne!(tabs.current().id, second);
+}
+#[test]
+fn help_logo_is_embedded_and_does_not_need_a_document_scope() {
+    let (bytes, mime, status) = assets::serve(assets::brand_url());
+    assert_eq!(status, 200);
+    assert_eq!(mime, "image/png");
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert_eq!(root::app_name(), "BS Notepad");
+}

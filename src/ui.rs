@@ -168,11 +168,104 @@ article pre:hover .copy,.copy:focus-visible { opacity:1; }
 @media (max-width:1080px) { #b-theme { display:none!important; } #brand span { display:none; } #brand { margin-right:5px; } }
 @media (max-width:800px) { #bar { gap:2px; padding:6px 8px; } #bar button { padding:5px 7px; } #b-saveas .button-label,#b-new .button-label,#b-open .button-label,#b-find .button-label { display:none; } #b-pin,#zoom-group { display:none!important; } #bar .sp { margin:0 3px; } #rail { width:125px; } .set { grid-template-columns:minmax(100px,1fr) minmax(100px,150px) 24px; gap:7px; } #document-tab { padding:0 10px; } #document-actions { padding:0 5px; } #document-actions button { padding:4px 5px; } }
 @media (prefers-reduced-motion:reduce) { * { transition:none!important; } }
+
+/* Window, documents and popups share the selected palette. */
+body { border:1px solid var(--rule); border-radius:10px; overflow:hidden; }
+body.maximized { border-radius:0; }
+body.auto.popup-open #bar { transform:none; }
+#bar #brand #app-name { display:inline!important; }
+#bar { min-height:42px; padding:4px 4px 4px 8px; gap:3px; }
+#bar #brand { padding:3px 7px; margin-right:4px; border:0; gap:7px; }
+#brand:hover #app-name { text-decoration:underline; text-underline-offset:4px; }
+#brand svg { width:24px; height:24px; }
+#bar #b-new,#bar #b-open,#bar #b-saveas,#bar #zoom-group,#bar #b-pin { display:none!important; }
+#bar .sp { margin:0 3px; }
+#bar .toolbar-end { margin-left:0; }
+#bar #b-theme { min-width:90px; max-width:155px; }
+#bar #drag-region { align-self:stretch; flex:1; min-width:24px; }
+#window-controls { display:flex; align-items:center; gap:1px; margin-left:6px; }
+#bar #window-controls button { width:33px; min-height:31px; padding:0; border-radius:4px; font:19px/1 system-ui,sans-serif; }
+#bar #window-close:hover { background:#c42b32; color:white; }
+#document-tabs { flex:1; min-width:0; display:flex; align-self:stretch; overflow-x:auto; scrollbar-width:thin; }
+.document-tab { display:flex; align-items:center; gap:0; flex:0 0 auto; max-width:240px; min-width:90px; border-right:1px solid var(--rule); background:var(--panel); }
+.document-tab.active { background:var(--bg); box-shadow:inset 0 2px var(--accent); }
+.tab-label { display:flex; align-items:center; gap:7px; min-width:0; max-width:210px; flex:1; padding:10px 6px 10px 12px; color:var(--dim); border:0; background:transparent; font-size:var(--ui-size); }
+.active .tab-label { color:var(--fg); }
+.tab-label .tab-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.tab-dirty { font-size:9px; }
+.tab-close { width:23px; height:24px; padding:0; margin-right:5px; border:0; border-radius:4px; background:transparent; color:var(--dim); font-size:17px; }
+.tab-close:hover { background:var(--hover); color:var(--fg); }
+#tab-new { flex:0 0 29px; border:0; background:transparent; color:var(--dim); align-self:stretch; font-size:20px; }
+#tab-new:hover { background:var(--hover); }
+#document-actions { padding-left:6px; border-left:1px solid var(--rule); }
+#content-row { display:flex; flex:1; min-height:0; }
+#content-main { flex:1; min-width:0; display:flex; flex-direction:column; }
+#editor textarea { width:100%; height:100%; resize:none; border:0; outline:0; background:var(--bg); color:var(--fg); padding:20px 28px; font-family:var(--code-font); font-size:calc(var(--code-size) * var(--zoom)); line-height:var(--line); tab-size:4; }
+#minimap { flex:0 0 108px; width:108px; position:relative; background:var(--panel); border-left:1px solid var(--rule); overflow:hidden; cursor:pointer; touch-action:none; user-select:none; }
+#map-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+#map-viewport { position:absolute; left:3px; right:3px; min-height:12px; background:color-mix(in srgb,var(--accent) 12%,transparent); border:1px solid color-mix(in srgb,var(--accent) 65%,transparent); border-radius:4px; cursor:grab; }
+#map-viewport:active { cursor:grabbing; }
+#b-map.on { background:var(--selected); }
+.select-control { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; width:100%; text-align:left; padding:5px 8px; color:var(--fg); background:var(--panel); border:1px solid var(--rule); border-radius:4px; }
+.select-control .selected-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.select-control .select-arrow { color:var(--dim); font-size:11px; }
+.popup { position:fixed; z-index:70; min-width:210px; max-width:min(420px,calc(100vw - 16px)); max-height:calc(100vh - 16px); overflow:auto; padding:5px; border:1px solid var(--rule); border-radius:8px; background:var(--panel); color:var(--fg); box-shadow:0 8px 32px #0005; }
+.popup button { display:flex; align-items:center; gap:9px; width:100%; background:transparent; color:var(--fg); border:0; border-radius:4px; min-height:31px; padding:6px 10px; text-align:left; font-size:13px; }
+.popup button:hover,.popup button:focus-visible { background:var(--hover); }
+.popup button[aria-selected=true] { background:var(--selected); }
+.popup .menu-label { flex:1; }
+.popup .menu-hint { margin-left:16px; color:var(--dim); font-size:11px; white-space:nowrap; }
+.popup .menu-symbol { width:17px; text-align:center; color:var(--dim); }
+.popup hr { border:0; border-top:1px solid var(--rule); margin:5px 4px; }
+#choice-search { width:100%; padding:7px 9px; border:1px solid var(--rule); border-radius:4px; margin:0 0 5px; color:var(--fg); background:var(--bg); }
+#choice-list { max-height:300px; overflow:auto; }
+#choice-list .choice-empty { padding:12px; color:var(--dim); }
+#pfoot #footer-brand { border:0; background:transparent; color:var(--fg); padding:4px 0; font-weight:600; white-space:nowrap; }
+#pfoot #footer-brand:hover { text-decoration:underline; }
+#pfoot .grow { text-align:right; }
+#help-overlay { display:none; position:absolute; inset:0; z-index:35; background:#0007; align-items:center; justify-content:center; }
+#help-overlay.show { display:flex; }
+#help-panel { width:min(840px,94vw); height:min(650px,90vh); min-width:440px; min-height:340px; max-width:98vw; max-height:96vh; display:flex; flex-direction:column; resize:both; overflow:hidden; background:var(--bg); border:1px solid var(--rule); border-radius:10px; box-shadow:0 20px 70px #0005; }
+#help-head { display:flex; align-items:center; gap:17px; padding:19px 23px; border-bottom:1px solid var(--rule); background:var(--panel); }
+#help-logo { width:84px; height:84px; object-fit:contain; }
+#help-title { margin:0 0 5px; font-size:25px; }
+#help-version { margin:0; color:var(--dim); font-size:12px; }
+#help-close { margin-left:auto; align-self:flex-start; border:0; background:transparent; color:var(--dim); font-size:24px; }
+#help-search-row { padding:12px 18px; border-bottom:1px solid var(--rule); }
+#help-search { width:100%; border:1px solid var(--rule); border-radius:5px; background:var(--panel); color:var(--fg); padding:8px 10px; }
+#help-layout { display:flex; flex:1; min-height:0; }
+#help-nav { width:168px; flex:0 0 168px; padding:9px; border-right:1px solid var(--rule); background:var(--panel); }
+#help-nav button { width:100%; text-align:left; border:0; border-radius:4px; padding:9px 10px; background:transparent; color:var(--dim); }
+#help-nav button.on { background:var(--selected); color:var(--fg); }
+#help-content { flex:1; min-width:0; padding:7px 22px 20px; overflow:auto; font-size:14px; line-height:1.7; user-select:text; }
+#help-content h3 { margin:15px 0 8px; font-size:18px; }
+#help-content p { margin:8px 0 15px; }
+#help-content kbd { font:12px var(--code-font); border:1px solid var(--rule); background:var(--panel); padding:2px 5px; border-radius:4px; white-space:nowrap; }
+#help-content .shortcut { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--rule); }
+#help-foot { display:flex; align-items:center; gap:14px; padding:12px 18px; border-top:1px solid var(--rule); background:var(--panel); }
+#help-foot a { color:var(--link); text-decoration:none; }
+#help-foot a:hover { text-decoration:underline; }
+#help-foot span { margin-left:auto; color:var(--dim); font-size:12px; }
+#help-foot button { color:var(--fg); border:1px solid var(--rule); background:var(--bg); padding:5px 15px; border-radius:4px; }
+#resize-edges { position:fixed; inset:0; pointer-events:none; z-index:80; }
+#resize-edges i { position:absolute; pointer-events:auto; }
+#resize-edges [data-direction=n],#resize-edges [data-direction=s] { left:8px; right:8px; height:4px; cursor:ns-resize; }
+#resize-edges [data-direction=n] { top:0; } #resize-edges [data-direction=s] { bottom:0; }
+#resize-edges [data-direction=e],#resize-edges [data-direction=w] { top:8px; bottom:8px; width:4px; cursor:ew-resize; }
+#resize-edges [data-direction=e] { right:0; } #resize-edges [data-direction=w] { left:0; }
+#resize-edges [data-direction=nw],#resize-edges [data-direction=se] { width:9px; height:9px; cursor:nwse-resize; }
+#resize-edges [data-direction=ne],#resize-edges [data-direction=sw] { width:9px; height:9px; cursor:nesw-resize; }
+#resize-edges [data-direction=nw] { top:0; left:0; } #resize-edges [data-direction=ne] { top:0; right:0; }
+#resize-edges [data-direction=sw] { bottom:0; left:0; } #resize-edges [data-direction=se] { bottom:0; right:0; }
+body.maximized #resize-edges { display:none; }
+@media (max-width:900px) { #bar #b-theme { display:none!important; } #brand span { display:inline!important; } #bar #b-opts .button-label,#bar #b-find .button-label { display:none; } }
+@media (max-width:720px) { #brand #app-name { font-size:12px; } #bar #b-save .button-label { display:none; } #bar .sp { display:none; } #bar #b-side { padding:5px; } #minimap { width:72px; flex-basis:72px; } #pfoot .grow { display:none; } #pfoot #footer-brand { margin-right:auto; } #help-nav { width:130px; flex-basis:130px; } #help-head { padding:12px 16px; } }
 </style></head><body>
 
 <div id="hot"></div>
 <header id="bar" aria-label="Toolbar">
-  <div id="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="4" y="4" width="56" height="56" rx="9" fill="#223d58"/><path d="M13 10h32v44H13z" fill="#ddecf4"/><path d="M13 10h6v44h-6z" fill="#479bcd"/><path d="M24 21h15m-15 8h15m-15 8h15m-15 8h12" stroke="#738fa0" stroke-width="2"/><path d="m33 48 16-27 5 3-16 27-7 4z" fill="#f4b74d" stroke="#1c2c3e" stroke-width="2"/></svg><span id="app-name"></span></div>
+  <button id="b-menu" class="icon-only" aria-label="Main menu" aria-haspopup="menu" title="Main menu (Alt+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <button id="brand" class="brand-help" title="Help &amp; about BS Notepad" aria-label="BS Notepad help"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="4" y="4" width="56" height="56" rx="9" fill="#223d58"/><path d="M13 10h32v44H13z" fill="#ddecf4"/><path d="M13 10h6v44h-6z" fill="#479bcd"/><path d="M24 21h15m-15 8h15m-15 8h15m-15 8h12" stroke="#738fa0" stroke-width="2"/><path d="m33 48 16-27 5 3-16 27-7 4z" fill="#f4b74d" stroke="#1c2c3e" stroke-width="2"/></svg><span id="app-name"></span></button>
   <button id="b-side" aria-label="Files" aria-controls="side" aria-pressed="false" title="Show or hide the file tree (Ctrl+B)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M5.5 7h1M5.5 11h1M5.5 15h1"/></svg><span class="button-label">Files</span></button>
   <span class="sp"></span>
   <div class="toolbar-group">
@@ -183,15 +276,22 @@ article pre:hover .copy,.copy:focus-visible { opacity:1; }
   </div>
   <span class="sp"></span>
   <button id="b-find" aria-label="Find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span class="button-label">Find</span></button>
+  <div id="drag-region" title="Drag to move · Double-click to maximize"></div>
   <div class="toolbar-end">
     <div class="toolbar-group" id="zoom-group">
       <button id="b-zoomout" class="icon-only" aria-label="Zoom out" title="Zoom out (Ctrl+-)">−</button>
       <button id="b-zoomreset" title="Reset zoom (Ctrl+0)">100%</button>
       <button id="b-zoomin" class="icon-only" aria-label="Zoom in" title="Zoom in (Ctrl+=)">+</button>
     </div>
-    <select id="b-theme" aria-label="Theme" title="Theme"></select>
+    <button id="b-map" class="icon-only" aria-label="Document map" aria-pressed="false" title="Show or hide document map"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v18M18 6h1M18 9h1M18 12h1M18 15h1"/></svg></button>
+    <button id="b-theme" class="select-control" aria-label="Theme" aria-haspopup="listbox" aria-expanded="false" title="Theme"></button>
     <button id="b-opts" aria-label="Options" title="Options (Ctrl+,)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/></svg><span class="button-label">Options</span></button>
     <button id="b-pin" class="icon-only" aria-label="Toggle toolbar reveal" title="Keep this bar visible"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4zM12 15v7"/></svg></button>
+  </div>
+  <div id="window-controls">
+    <button id="window-min" aria-label="Minimize" title="Minimize">−</button>
+    <button id="window-max" aria-label="Maximize" title="Maximize">□</button>
+    <button id="window-close" aria-label="Close window" title="Close window">×</button>
   </div>
   <span id="note" role="status" aria-live="polite"></span>
 </header>
@@ -231,16 +331,19 @@ article pre:hover .copy,.copy:focus-visible { opacity:1; }
   </nav>
   <div id="main">
     <div id="document-head">
-      <div id="document-tab"><span id="document-icon" aria-hidden="true"></span><span id="name">Untitled</span><span id="dirty-dot" hidden title="Unsaved changes" aria-label="Unsaved changes">●</span></div>
+      <div id="document-tabs" role="tablist" aria-label="Open documents"></div>
+      <button id="tab-new" aria-label="New tab" title="New tab (Ctrl+T)">+</button>
       <div id="document-actions">
         <button id="b-view" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
         <button id="b-edit" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
       </div>
     </div>
     <div id="document-path" title="Document location"></div>
+    <div id="content-row" role="tabpanel"><div id="content-main">
     <div id="fm"></div>
     <div id="doc"><article id="article"></article></div>
     <div id="editor"><textarea id="text" aria-label="Document editor" spellcheck="false"></textarea></div>
+    </div><aside id="minimap" aria-label="Document map"><canvas id="map-canvas" aria-hidden="true"></canvas><div id="map-viewport" role="scrollbar" tabindex="0" aria-label="Document map position" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-controls="doc"></div></aside></div>
   </div>
 </div>
 
@@ -248,15 +351,28 @@ article pre:hover .copy,.copy:focus-visible { opacity:1; }
   <div id="phead"><h2 id="options-title">Options</h2><input id="search" aria-label="Search settings" placeholder="Search settings"><button id="opt-x" aria-label="Close options">×</button></div>
   <div id="pbody"><div id="rail"></div><div id="sets"></div></div>
   <div id="pfoot">
-    <span class="grow" id="pnote">Changes apply as you make them.</span>
+    <button id="footer-brand" class="brand-help" title="Help &amp; about BS Notepad">BS Notepad</button>
+    <span class="grow" id="pnote">Changes save automatically.</span>
     <button id="opt-reset">Reset all</button>
     <button class="pri" id="opt-close">Done</button>
   </div>
 </div></div>
 
+<div id="help-overlay"><section id="help-panel" role="dialog" aria-modal="true" aria-labelledby="help-title">
+  <header id="help-head"><img id="help-logo" alt="BS" width="84" height="84"><div><h2 id="help-title">BS Notepad</h2><p id="help-version"></p></div><button id="help-close" aria-label="Close help">×</button></header>
+  <div id="help-search-row"><input id="help-search" aria-label="Search help" placeholder="Find a command, shortcut or setting…"></div>
+  <div id="help-layout"><nav id="help-nav" aria-label="Help topics"></nav><div id="help-content" tabindex="0"></div></div>
+  <footer id="help-foot"><a id="help-github" href="#">GitHub · IronWolve ↗</a><span>F1 opens Help</span><button id="help-done">Done</button></footer>
+</section></div>
+<div id="menu-popup" class="popup" role="menu" hidden></div>
+<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-list" role="listbox"></div></div>
+<div id="resize-edges" aria-hidden="true"><i data-direction="n"></i><i data-direction="s"></i><i data-direction="e"></i><i data-direction="w"></i><i data-direction="nw"></i><i data-direction="ne"></i><i data-direction="sw"></i><i data-direction="se"></i></div>
 <script>
 const $ = id => document.getElementById(id);
-const send = o => window.ipc.postMessage(JSON.stringify(o));
+const send = o => {
+ const editor=$("text"), doc=$("doc");
+ window.ipc.postMessage(JSON.stringify({...o,fromTab:state.activeTab,view:{editing:state.editing,scroll:doc.scrollTop/(doc.scrollHeight||1),editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0}}));
+};
 const ICONS = {"edit": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4\"/></svg>", "preview": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "source": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>", "chevron": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\"/></svg>"};
 function setCommand(id, icon, label) { $(id).innerHTML = ICONS[icon] + '<span class="button-label">' + label + '</span>'; }
 function fileAppearance(name, directory = false, expanded = false) {
@@ -351,13 +467,13 @@ function samePath(a,b) {
 
 let requestId = 0, noteTimer, optionsFocus;
 const pendingFolders = new Map();
-let state = { settings:{}, defaults:{}, themes:[], fonts:[], path:"", dirty:false, editing:false };
+let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"", dirty:false, editing:false };
 // Grouped so each screen is short. Remembered state - window size, last file,
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
   Appearance: ["theme", "chrome", "zoom"],
   Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "close_to_tray"],
-  Editor: ["word_wrap", "tab_size"],
+  Editor: ["word_wrap", "tab_size", "minimap"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "body_size",
           "code_size", "line_height", "ligatures"],
   Document: ["view_mode", "syntax_colour", "highlight_limit_kb",
@@ -370,6 +486,7 @@ const CHOICES = {
   sidebar_tab: ["files", "outline", "recent"],
 };
 const LABELS = {
+ minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
  theme:["Color theme","Colors for the editor, reader and workspace."],
  chrome:["Toolbar","Keep controls visible or reveal them at the top edge."],
  sidebar:["Sidebar","Dock the browser, reveal it from the left edge, or hide it."],
@@ -393,21 +510,17 @@ let activeGroup = "Appearance";
 
 const app = {
   init(s) {
-    state.name = s.name; state.trayAvailable = s.trayAvailable;
+    state.name = s.name; state.version = s.version; state.logoUrl = s.logoUrl; state.githubUrl = s.githubUrl; state.trayAvailable = s.trayAvailable;
     document.title = s.name; $("app-name").textContent = s.name;
     $("options-title").textContent = "Options";
-    $("pnote").textContent = s.name + " " + s.version + " · Changes save automatically.";
+    $("footer-brand").textContent = s.name + " · " + s.version;
+    $("pnote").textContent = "Changes save automatically.";
     state.settings = s.settings; state.defaults = s.defaults;
     state.themes = s.themes; state.fonts = s.fonts;
-    const sel = $("b-theme");
-    sel.innerHTML = "";
-    for (const t of s.themes) {
-      const o = document.createElement("option");
-      o.value = t.id; o.textContent = t.name; sel.appendChild(o);
-    }
-    sel.value = state.settings.theme;
+    app.setThemeControl();
     app.applyTheme(s.theme);
     app.applySettings(s.settings);
+    app.windowState(!!s.maximized);
     if (s.missingFonts && s.missingFonts.length)
       app.note("font not on this machine: " + s.missingFonts.join(", "));
     if ($("options").classList.contains("show")) app.drawOptions();
@@ -444,7 +557,7 @@ const app = {
     $("b-side").classList.toggle("on", filesDocked);
     $("b-side").setAttribute("aria-pressed", String(filesDocked));
     $("b-side").title = (filesDocked ? "Hide" : "Show") + " the file tree (Ctrl+B)";
-    $("b-theme").value = s.theme;
+    app.setThemeControl();
     $("grip").setAttribute("aria-valuenow", s.sidebar_width);
     $("grip").setAttribute("aria-valuemin", 180);
     $("grip").setAttribute("aria-valuemax", 640);
@@ -462,11 +575,7 @@ const app = {
   },
   setDocument(d) {
     $("article").innerHTML = d.html;
-    $("name").textContent = d.name || "no file open";
     state.path = d.path || "";
-    $("name").title = d.path || "Untitled";
-    $("document-icon").replaceChildren(fileIcon(d.name || "Untitled.md"));
-    $("document-icon").title = fileAppearance(d.name || "Untitled.md").type;
     app.breadcrumbs();
     app.note(d.note || "");
     $("fm").textContent = d.frontMatter || "";
@@ -485,7 +594,7 @@ const app = {
     state.dirty = d;
     $("b-save").classList.toggle("on", d);
     $("b-save").setAttribute("aria-label", d ? "Save unsaved changes" : "Save");
-    $("dirty-dot").hidden = !d;
+    app.updateTabDirty?.(d);
   },
   breadcrumbs() {
     const path = normalizedPath(state.path || "");
@@ -621,7 +730,7 @@ const app = {
       else if (a.dataset.open) a.onclick = e => { e.preventDefault(); send({ cmd:"openPath", path:a.dataset.open }); };
     }
   },
-  toggleEdit(on) {
+  toggleEdit(on, notify = true) {
     state.editing = on;
     $("editor").classList.toggle("show", on);
     $("doc").style.display = on ? "none" : "";
@@ -629,6 +738,8 @@ const app = {
     setCommand("b-edit",on ? "preview" : "edit",on ? "Preview" : "Edit");
     $("fm").hidden = on;
     if (on) $("text").focus();
+    if (notify) send({cmd:"viewState"});
+    app.scheduleMap?.();
     if ($("find").classList.contains("show")) runFind($("find-text").value);
   },
   options(open) {
@@ -708,26 +819,12 @@ const app = {
         control.appendChild(b);
       }
     } else if (CHOICES[key]) {
-      control = document.createElement("select");
-      for (const choice of CHOICES[key]) {
-        const o = document.createElement("option");
-        o.value = choice; o.textContent = choiceLabel(choice);
-        o.selected = choice === value;
-        control.appendChild(o);
-      }
+      control = app.selectControl(CHOICES[key].map(choice => ({value:choice,label:choiceLabel(choice)})),value,
+        next => send({cmd:"setting",key,value:next}), LABELS[key]?.[0] || key);
     } else if (key.endsWith("_font")) {
-      control = document.createElement("select");
-      const mono = key === "code_font";
-      const list = state.fonts.filter(f => !mono || f.monospace);
-      const current = document.createElement("option");
-      current.value = value; current.textContent = value; current.selected = true;
-      control.appendChild(current);
-      for (const f of list) {
-        const o = document.createElement("option");
-        o.value = f.name;
-        o.textContent = f.name + (f.nerd ? "   (patched)" : "");
-        control.appendChild(o);
-      }
+      const list = state.fonts.filter(f => key !== "code_font" || f.monospace);
+      const choices = [{value,label:value},...list.filter(f=>f.name!==value).map(f=>({value:f.name,label:f.name + (f.nerd ? " (patched)" : "")}))];
+      control = app.selectControl(choices,value,next=>send({cmd:"setting",key,value:next}),LABELS[key]?.[0] || key);
     } else if (typeof value === "boolean") {
       control = document.createElement("input");
       control.type = "checkbox";
@@ -746,7 +843,7 @@ const app = {
     control.setAttribute("aria-labelledby", label.id);
     control.dataset.setting = key;
     if (key === "close_to_tray" && !state.trayAvailable) { control.disabled = true; help.textContent = "System tray is available in the Windows build."; }
-    if (control.tagName !== "DIV") {
+    if (!["DIV","BUTTON"].includes(control.tagName)) {
       control.onchange = () => {
         let next = control.type === "checkbox" ? control.checked : control.value;
         if (typeof fallback === "number") { if (!control.value || !control.checkValidity()) return; next = Number(next); }
@@ -886,7 +983,7 @@ $("grip").onmousedown = e => {
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
 };
-$("b-theme").onchange = e => send({ cmd:"setting", key:"theme", value:e.target.value });
+$("b-theme").onclick = () => app.chooseTheme();
 $("b-opts").onclick = () => app.options(true);
 $("opt-x").onclick = () => app.options(false);
 $("options").onclick = e => { if (e.target === $("options")) app.options(false); };
@@ -945,5 +1042,11 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Escape") { $("find-close").onclick(); app.options(false); }
   else if (e.key === "F3") step(e.shiftKey ? -1 : 1);
 });
+/* WORKSPACE_UI */
 send({ cmd:"ready" });
 </script></body></html>"##;
+
+
+pub fn shell() -> String {
+    SHELL.replace("/* WORKSPACE_UI */", include_str!("workspace.js"))
+}

@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod assets;
+mod documents;
 mod fonts;
 mod icon;
 mod instance;
@@ -27,6 +28,7 @@ use tao::window::{Window, WindowBuilder};
 use wry::http::{Request, Response};
 use wry::{WebView, WebViewBuilder};
 
+use documents::{Document, Documents};
 use render::Renderer;
 use settings::Settings;
 
@@ -49,17 +51,25 @@ struct App {
     root: PathBuf,
     smoke_started: Option<Instant>,
     settings: Settings,
+    documents: Documents,
     renderer: Renderer,
     fonts: Vec<fonts::FontFamily>,
-    path: Option<PathBuf>,
-    source: String,
-    saved_source: String,
     tray: tray::SystemTray,
-    seen_mtime: Option<SystemTime>,
-    dirty: bool,
     tree_dir: PathBuf,
     window: Window,
     webview: WebView,
+}
+
+impl std::ops::Deref for App {
+    type Target = Document;
+    fn deref(&self) -> &Document {
+        self.documents.current()
+    }
+}
+impl std::ops::DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Document {
+        self.documents.current_mut()
+    }
 }
 
 fn open_externally(url: &str) {
@@ -111,6 +121,9 @@ impl App {
 
         let payload = json!({
             "name": root::app_name(),
+            "logoUrl": assets::brand_url(),
+            "maximized": self.window.is_maximized(),
+            "githubUrl": env!("CARGO_PKG_HOMEPAGE"),
             "version": env!("CARGO_PKG_VERSION"),
             "trayAvailable": self.tray.available(),
             "settings": self.settings,
@@ -164,28 +177,78 @@ impl App {
         self.window.set_focus();
     }
 
-    fn new_note(&mut self) {
-        if !self.may_close() {
-            return;
+    fn send_tabs(&self) {
+        let tabs: Vec<_> = self.documents.tabs.iter().map(|doc| json!({
+            "id":doc.id, "name":doc.name(), "path":doc.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(), "dirty":doc.dirty
+        })).collect();
+        self.run_js(format!(
+            "window.app.setTabs({});",
+            json!({"active":self.id,"tabs":tabs})
+        ));
+    }
+
+    fn activate_tab(&mut self, id: u64) {
+        if self.documents.activate(id) {
+            assets::set_scope(self.path.as_deref().and_then(Path::parent));
+            if let Some(path) = self.path.clone() {
+                self.settings.remember(&path);
+            }
+            self.render_current(self.scroll);
         }
-        self.path = None;
-        self.source.clear();
-        self.saved_source.clear();
-        self.seen_mtime = None;
-        self.dirty = false;
+    }
+
+    fn new_note(&mut self) {
+        let mut doc = Document::new(None, String::new());
+        doc.editing = true;
+        self.documents.insert(doc);
         assets::set_scope(None);
         self.render_current(0.0);
-        self.run_js("window.app.toggleEdit(true);".into());
+    }
+
+    fn close_tab(&mut self, id: u64) -> bool {
+        if !self.documents.activate(id) {
+            return true;
+        }
+        self.render_current(self.scroll);
+        if !self.may_close() {
+            return false;
+        }
+        self.documents.remove(id);
+        self.activate_tab(self.id);
+        true
+    }
+
+    fn close_window(&mut self, control_flow: &mut ControlFlow) {
+        if self.settings.close_to_tray && self.tray.available() {
+            self.remember_window();
+            let _ = self.settings.save(&self.root);
+            self.window.set_visible(false);
+        } else {
+            self.quit(control_flow);
+        }
     }
 
     fn quit(&mut self, control_flow: &mut ControlFlow) {
         self.show();
-        if self.may_close() {
-            self.remember_window();
-            let _ = self.settings.save(&self.root);
-            instance::release(&self.root);
-            *control_flow = ControlFlow::Exit;
+        let original = self.id;
+        let dirty: Vec<u64> = self
+            .documents
+            .tabs
+            .iter()
+            .filter(|d| d.dirty)
+            .map(|d| d.id)
+            .collect();
+        for id in dirty {
+            self.activate_tab(id);
+            if !self.may_close() {
+                return;
+            }
         }
+        self.activate_tab(original);
+        self.remember_window();
+        let _ = self.settings.save(&self.root);
+        instance::release(&self.root);
+        *control_flow = ControlFlow::Exit;
     }
 
     fn render_current(&mut self, scroll: f32) {
@@ -193,17 +256,16 @@ impl App {
         let document = self
             .renderer
             .render(self.path.as_deref(), &self.source, &self.settings, &t);
-        let name = self
-            .path
-            .as_ref()
-            .map(|p| {
-                p.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| p.display().to_string())
-            })
-            .unwrap_or_else(|| "Untitled".into());
+        let name = self.name();
 
+        self.send_tabs();
         let payload = json!({
+            "tab": self.id,
+            "revision": self.edit_revision,
+            "editing": self.editing,
+            "editorScroll": self.editor_scroll,
+            "selectionStart": self.selection_start,
+            "selectionEnd": self.selection_end,
             "dirty": self.dirty,
             "html": document.html,
             "outline": document.outline,
@@ -216,7 +278,9 @@ impl App {
         self.run_js(format!("window.app.setDocument({});", payload));
         self.run_js(format!(
             "window.app.setEditorText({});",
-            serde_json::to_string(&self.source).unwrap_or_else(|_| "\"\"".into())
+            json!({
+                "tab":self.id,"revision":self.edit_revision,"text":self.source
+            })
         ));
 
         let title = match &self.path {
@@ -227,36 +291,35 @@ impl App {
             .set_title(&format!("{}{}", if self.dirty { "* " } else { "" }, title));
     }
 
-    fn open(&mut self, path: PathBuf) {
-        if !self.may_close() {
+    fn open(&mut self, path: PathBuf, new_tab: bool) {
+        let path = path.canonicalize().unwrap_or(path);
+        if let Some(id) = self.documents.find_path(&path) {
+            self.activate_tab(id);
             return;
         }
-        let path = path.canonicalize().unwrap_or(path);
-        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         match std::fs::read_to_string(&path) {
             Ok(text) => {
-                log::line(&format!("open {} ({} bytes)", path.display(), size));
-                self.saved_source = text.clone();
-                self.source = text;
-                self.seen_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+                if !new_tab && !self.may_close() {
+                    return;
+                }
+                log::line(&format!("open {} ({} bytes)", path.display(), text.len()));
+                let document = Document::new(Some(path.clone()), text);
+                if new_tab {
+                    self.documents.insert(document);
+                } else {
+                    self.documents.replace(document);
+                }
                 assets::set_scope(path.parent());
                 self.settings.remember(&path);
-                self.path = Some(path.clone());
-                self.dirty = false;
-                self.run_js("window.app.toggleEdit(false);".into());
                 self.render_current(0.0);
                 self.send_recents();
                 if let Some(parent) = path.parent() {
                     if !path.starts_with(&self.tree_dir) {
-                        let dir = parent.to_path_buf();
-                        self.send_tree(dir);
+                        self.send_tree(parent.to_path_buf());
                     }
                 }
             }
-            Err(e) => {
-                log::line(&format!("open failed {}: {}", path.display(), e));
-                self.notify(&format!("Cannot open {}: {}", path.display(), e));
-            }
+            Err(e) => self.notify(&format!("Cannot open {}: {}", path.display(), e)),
         }
     }
 
@@ -275,7 +338,7 @@ impl App {
             dialog = dialog.set_directory(dir);
         }
         if let Some(picked) = dialog.pick_file() {
-            self.open(picked);
+            self.open(picked, true);
         }
     }
 
@@ -338,6 +401,13 @@ impl App {
             }
         };
 
+        let path = path.canonicalize().unwrap_or(path);
+        if let Some(id) = self.documents.find_path(&path) {
+            if id != self.id {
+                self.notify("That file is already open in another tab. Save from that tab, or choose another filename.");
+                return false;
+            }
+        }
         // If the file moved underneath us, say so rather than overwriting.
         let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if self.path.as_ref() == Some(&path) && self.seen_mtime.is_some() {
@@ -407,7 +477,7 @@ impl App {
             }
             self.send_settings();
             if rerender {
-                self.render_current(self.settings.last_scroll);
+                self.render_current(self.scroll);
             }
             let _ = self.settings.save(&self.root);
         }
@@ -422,6 +492,27 @@ impl App {
             log::line(&format!("page: {}", command));
         }
 
+        if let Some(id) = value.get("fromTab").and_then(|v| v.as_u64()) {
+            if let Some(view) = value.get("view") {
+                if let Some(doc) = self.documents.get_mut(id) {
+                    if let Some(v) = view.get("editing").and_then(|v| v.as_bool()) {
+                        doc.editing = v;
+                    }
+                    if let Some(v) = view.get("scroll").and_then(|v| v.as_f64()) {
+                        doc.scroll = v as f32;
+                    }
+                    if let Some(v) = view.get("editorScroll").and_then(|v| v.as_f64()) {
+                        doc.editor_scroll = v;
+                    }
+                    if let Some(v) = view.get("selectionStart").and_then(|v| v.as_u64()) {
+                        doc.selection_start = v;
+                    }
+                    if let Some(v) = view.get("selectionEnd").and_then(|v| v.as_u64()) {
+                        doc.selection_end = v;
+                    }
+                }
+            }
+        }
         match command {
             "ready" => {
                 self.send_init();
@@ -431,7 +522,7 @@ impl App {
                 let scroll = self.settings.last_scroll;
                 self.render_current(scroll);
                 if self.smoke_started.is_some() {
-                    self.run_js("setTimeout(() => window.ipc.postMessage(JSON.stringify({cmd:'smokeReady',ok:!!document.getElementById('app-name').textContent && !!document.querySelector('#pane-files > div') && document.getElementById('text').value.length > 0})), 0);".into());
+                    self.run_js(include_str!("smoke.js").into());
                 }
             }
             "smokeReady" if self.smoke_started.is_some() => {
@@ -441,33 +532,108 @@ impl App {
                         self.smoke_started.unwrap().elapsed().as_millis()
                     );
                 } else {
-                    eprintln!("UI initialization failed");
+                    eprintln!(
+                        "UI smoke test failed: {}",
+                        value
+                            .get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown error")
+                    );
                 }
                 let _ = self.settings.save(&self.root);
                 instance::release(&self.root);
                 *control_flow = ControlFlow::Exit;
             }
-            "new" => self.new_note(),
-            "edit" => {
-                if let Some(text) = value.get("text").and_then(|t| t.as_str()) {
-                    self.source = text.to_owned();
-                    self.dirty = self.source != self.saved_source;
-                    self.run_js(format!("window.app.setDirty({});", self.dirty));
-                    let name = self
-                        .path
-                        .as_ref()
-                        .and_then(|p| p.file_name())
-                        .and_then(|p| p.to_str())
-                        .unwrap_or("Untitled");
-                    self.window.set_title(&format!(
-                        "{}{} - {}",
-                        if self.dirty { "* " } else { "" },
-                        name,
-                        root::app_name()
-                    ));
+            "windowMinimize" => self.window.set_minimized(true),
+            "windowMaximize" => self.window.set_maximized(!self.window.is_maximized()),
+            "windowDrag" => {
+                let _ = self.window.drag_window();
+            }
+            "windowResize" => {
+                use tao::window::ResizeDirection as D;
+                let direction = match value.get("direction").and_then(|v| v.as_str()) {
+                    Some("n") => Some(D::North),
+                    Some("s") => Some(D::South),
+                    Some("e") => Some(D::East),
+                    Some("w") => Some(D::West),
+                    Some("ne") => Some(D::NorthEast),
+                    Some("nw") => Some(D::NorthWest),
+                    Some("se") => Some(D::SouthEast),
+                    Some("sw") => Some(D::SouthWest),
+                    _ => None,
+                };
+                if let Some(direction) = direction {
+                    let _ = self.window.drag_resize_window(direction);
                 }
             }
-            "preview" => self.render_current(self.settings.last_scroll),
+            "closeWindow" => self.close_window(control_flow),
+            "new" => self.new_note(),
+            "activateTab" => {
+                if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+                    self.activate_tab(id);
+                }
+            }
+            "closeTab" => {
+                if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+                    self.close_tab(id);
+                }
+            }
+            "closeOtherTabs" => {
+                if let Some(keep) = value.get("id").and_then(|v| v.as_u64()) {
+                    let ids: Vec<u64> = self
+                        .documents
+                        .tabs
+                        .iter()
+                        .filter(|d| d.id != keep)
+                        .map(|d| d.id)
+                        .collect();
+                    let mut completed = true;
+                    for id in ids {
+                        if !self.close_tab(id) {
+                            completed = false;
+                            break;
+                        }
+                    }
+                    if completed {
+                        self.activate_tab(keep);
+                    }
+                }
+            }
+            "viewState" => {}
+            "edit" => {
+                if let Some(text) = value.get("text").and_then(|t| t.as_str()) {
+                    let id = value
+                        .get("fromTab")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(self.id);
+                    let mut changed = false;
+                    if let Some(doc) = self.documents.get_mut(id) {
+                        let before = doc.dirty;
+                        let revision = value
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(doc.edit_revision + 1);
+                        if revision >= doc.edit_revision {
+                            doc.edit(text.to_owned());
+                            doc.edit_revision = revision;
+                        }
+                        changed = before != doc.dirty;
+                    }
+                    if changed {
+                        self.send_tabs();
+                    }
+                    if id == self.id {
+                        self.run_js(format!("window.app.setDirty({});", self.dirty));
+                        self.window.set_title(&format!(
+                            "{}{} - {}",
+                            if self.dirty { "* " } else { "" },
+                            self.name(),
+                            root::app_name()
+                        ));
+                    }
+                }
+            }
+            "preview" => self.render_current(self.scroll),
             "open" => self.pick_and_open(),
             "openFolder" => {
                 if let Some(dir) = rfd::FileDialog::new()
@@ -479,10 +645,72 @@ impl App {
                     self.send_tree(dir);
                 }
             }
+            "reload" => {
+                if let Some(path) = self.path.clone() {
+                    if self.may_close() {
+                        match std::fs::read_to_string(&path) {
+                            Ok(text) => {
+                                let mut doc = Document::new(Some(path), text);
+                                doc.editing = self.editing;
+                                doc.scroll = self.scroll;
+                                self.documents.replace(doc);
+                                self.render_current(self.scroll);
+                            }
+                            Err(e) => self.notify(&format!("Cannot reload: {}", e)),
+                        }
+                    }
+                } else {
+                    self.notify("Save this note before reloading it.");
+                }
+            }
             "refreshTree" => self.send_tree(self.tree_dir.clone()),
             "openPath" => {
                 if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
-                    self.open(PathBuf::from(path));
+                    self.open(
+                        PathBuf::from(path),
+                        value
+                            .get("newTab")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                    );
+                }
+            }
+            "workspacePath" => {
+                if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
+                    self.send_tree(PathBuf::from(path));
+                }
+            }
+            "showFolder" => {
+                if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
+                    let path = Path::new(path);
+                    let folder = if path.is_dir() {
+                        path
+                    } else {
+                        path.parent().unwrap_or(path)
+                    };
+                    let command = if cfg!(target_os = "windows") {
+                        "explorer.exe"
+                    } else if cfg!(target_os = "macos") {
+                        "open"
+                    } else {
+                        "xdg-open"
+                    };
+                    let folder_text = folder.to_string_lossy();
+                    let folder_text = if cfg!(target_os = "windows") {
+                        if let Some(rest) = folder_text.strip_prefix(r"\\?\UNC\") {
+                            format!(r"\\{}", rest)
+                        } else {
+                            folder_text
+                                .strip_prefix(r"\\?\")
+                                .unwrap_or(&folder_text)
+                                .to_string()
+                        }
+                    } else {
+                        folder_text.into_owned()
+                    };
+                    if let Err(e) = std::process::Command::new(command).arg(folder_text).spawn() {
+                        self.notify(&format!("Cannot open folder: {}", e));
+                    }
                 }
             }
             "expand" => {
@@ -504,6 +732,14 @@ impl App {
                 }
             }
             "save" | "saveAs" => {
+                if value
+                    .get("fromTab")
+                    .and_then(|v| v.as_u64())
+                    .is_some_and(|id| id != self.id)
+                {
+                    self.notify("Select the document tab before saving it.");
+                    return;
+                }
                 let text = value
                     .get("text")
                     .and_then(|t| t.as_str())
@@ -542,6 +778,7 @@ impl App {
             }
             "scroll" => {
                 if let Some(v) = value.get("value").and_then(|v| v.as_f64()) {
+                    self.scroll = v as f32;
                     self.settings.last_scroll = v as f32;
                 }
             }
@@ -557,7 +794,10 @@ impl App {
         }
         let choice = rfd::MessageDialog::new()
             .set_title("Unsaved changes")
-            .set_description("Save your changes before continuing?")
+            .set_description(format!(
+                "Save changes to {} before continuing?",
+                self.name()
+            ))
             .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
                 "Save".into(),
                 "Discard".into(),
@@ -623,6 +863,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let window = WindowBuilder::new()
         .with_title(root::app_name())
+        .with_decorations(false)
         .with_window_icon(tao::window::Icon::from_rgba(icon::rgba(64), 64, 64).ok())
         .with_min_inner_size(tao::dpi::LogicalSize::new(620.0, 400.0))
         .with_inner_size(tao::dpi::LogicalSize::new(
@@ -632,12 +873,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_maximized(settings.window_maximized)
         .build(&event_loop)?;
 
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::WindowExtWindows;
+        use windows_sys::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+        };
+        window.set_undecorated_shadow(true);
+        let preference = DWMWCP_ROUND;
+        // The window handle is owned by this live window; the API copies the value.
+        unsafe {
+            DwmSetWindowAttribute(
+                window.hwnd() as _,
+                DWMWA_WINDOW_CORNER_PREFERENCE as _,
+                (&preference as *const i32).cast(),
+                std::mem::size_of_val(&preference) as _,
+            );
+        }
+    }
     let tray = tray::SystemTray::new(proxy.clone());
 
     let drop_proxy = proxy.clone();
     let ipc_proxy = proxy.clone();
     let builder = WebViewBuilder::new()
-        .with_html(ui::SHELL)
+        .with_html(ui::shell())
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 if let Some(path) = paths.first() {
@@ -700,14 +959,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut app = App {
-        seen_mtime: initial
-            .as_ref()
-            .and_then(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()),
-        path: initial,
-        saved_source: source.clone(),
-        source,
+        documents: Documents::new(Document::new(initial, source)),
         tray,
-        dirty: false,
         tree_dir,
         root: root.clone(),
         smoke_started: std::env::var_os("EXIT_WHEN_READY").map(|_| started),
@@ -727,28 +980,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         *control_flow = ControlFlow::Wait;
         match event {
             Event::UserEvent(UserEvent::Page(message)) => app.handle(&message, control_flow),
-            Event::UserEvent(UserEvent::Dropped(path)) => app.open(path),
+            Event::UserEvent(UserEvent::Dropped(path)) => app.open(path, true),
             Event::UserEvent(UserEvent::Handoff(path)) => {
                 app.show();
                 if let Some(path) = path {
-                    app.open(PathBuf::from(path));
+                    app.open(PathBuf::from(path), true);
                 }
             }
             Event::WindowEvent {
                 event: WindowEvent::DroppedFile(path),
                 ..
-            } => app.open(path),
+            } => app.open(path, true),
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                if app.settings.close_to_tray && app.tray.available() {
-                    app.remember_window();
-                    let _ = app.settings.save(&app.root);
-                    app.window.set_visible(false);
-                } else {
-                    app.quit(control_flow);
-                }
+                app.close_window(control_flow);
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => {
+                app.run_js(format!(
+                    "window.app && window.app.windowState({});",
+                    app.window.is_maximized()
+                ));
             }
             #[cfg(target_os = "windows")]
             Event::UserEvent(UserEvent::Tray(command)) => {

@@ -15,5 +15,5 @@ pub fn app_root() -> PathBuf {
 
 /// Human name of the app, taken from the one manifest field that declares it.
 pub fn app_name() -> &'static str {
-    env!("CARGO_PKG_NAME")
+    env!("APP_DISPLAY_NAME")
 }
