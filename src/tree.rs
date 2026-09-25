@@ -11,29 +11,29 @@ pub struct Entry {
 }
 
 const TEXTUAL: &[&str] = &[
-    "md", "markdown", "mdown", "mkd", "mkdn", "mdx", "txt", "text", "rst", "org",
-    "rs", "py", "js", "ts", "jsx", "tsx", "go", "c", "h", "cpp", "hpp", "cs", "java",
-    "rb", "php", "sh", "bash", "zsh", "ps1", "lua", "sql", "toml", "yaml", "yml",
-    "json", "xml", "html", "css", "scss", "ini", "conf", "cfg", "log", "csv",
+    "md", "markdown", "mdown", "mkd", "mkdn", "mdx", "txt", "text", "rst", "org", "rs", "py", "js",
+    "ts", "jsx", "tsx", "go", "c", "h", "cpp", "hpp", "cs", "java", "rb", "php", "sh", "bash",
+    "zsh", "ps1", "lua", "sql", "toml", "yaml", "yml", "json", "xml", "html", "css", "scss", "ini",
+    "conf", "cfg", "log", "csv",
 ];
 
 fn openable(path: &Path) -> bool {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) => TEXTUAL.contains(&ext.to_lowercase().as_str()),
-        None => false,
+        None => true,
     }
 }
 
 /// One directory level. Folders open on demand rather than the whole tree
 /// being walked up front.
-pub fn list(dir: &Path) -> Vec<Entry> {
+pub fn list(dir: &Path, show_hidden: bool) -> std::io::Result<Vec<Entry>> {
     let mut entries: Vec<Entry> = Vec::new();
-    let Ok(read) = std::fs::read_dir(dir) else { return entries };
+    let read = std::fs::read_dir(dir)?;
 
     for item in read.flatten() {
         let path = item.path();
         let name = item.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') {
+        if !show_hidden && name.starts_with('.') {
             continue;
         }
         let dir = path.is_dir();
@@ -50,5 +50,5 @@ pub fn list(dir: &Path) -> Vec<Entry> {
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
-    entries
+    Ok(entries)
 }

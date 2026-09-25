@@ -7,6 +7,12 @@ pub const RECENT_MAX: usize = 15;
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
+    pub settings_version: u32,
+    pub workspace: String,
+    pub show_hidden: bool,
+    pub word_wrap: bool,
+    pub tab_size: u32,
+    pub close_to_tray: bool,
     pub theme: String,
     pub ui_font: String,
     pub body_font: String,
@@ -43,6 +49,12 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            settings_version: 1,
+            workspace: String::new(),
+            show_hidden: false,
+            word_wrap: true,
+            tab_size: 4,
+            close_to_tray: false,
             theme: "dark".into(),
             // Generic stacks: the machine may not have any particular family,
             // and a missing font must degrade rather than break.
@@ -57,9 +69,9 @@ impl Default for Settings {
             zoom: 1.0,
             view_mode: "rendered".into(),
             syntax_colour: true,
-            chrome: "auto".into(),
-            // Starts bare on purpose: panes and chrome appear when asked for.
-            sidebar: "auto".into(),
+            chrome: "always".into(),
+            // Start with discoverable controls; edge reveal remains optional.
+            sidebar: "always".into(),
             sidebar_width: 260,
             sidebar_tab: "files".into(),
             window_width: 1200,
@@ -81,10 +93,39 @@ impl Settings {
     }
 
     pub fn load(root: &Path) -> Self {
-        std::fs::read_to_string(Self::file(root))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+        let raw = std::fs::read_to_string(Self::file(root)).unwrap_or_default();
+        let mut settings: Self = serde_json::from_str(&raw).unwrap_or_default();
+        // Make formerly hidden controls discoverable once when upgrading.
+        if !raw.contains("\"settings_version\"") {
+            settings.chrome = "always".into();
+            settings.sidebar = "always".into();
+        }
+        settings.normalize();
+        settings
+    }
+
+    pub fn normalize(&mut self) {
+        self.ui_size = self.ui_size.clamp(10, 28);
+        self.body_size = self.body_size.clamp(10, 48);
+        self.code_size = self.code_size.clamp(10, 40);
+        self.line_height = self.line_height.clamp(1.0, 2.5);
+        self.zoom = self.zoom.clamp(0.5, 3.0);
+        self.sidebar_width = self.sidebar_width.clamp(180, 640);
+        self.tab_size = self.tab_size.clamp(1, 8);
+        self.highlight_limit_kb = self.highlight_limit_kb.clamp(1, 4096);
+        self.plain_text_above_mb = self.plain_text_above_mb.clamp(1, 100);
+        if !["always", "auto"].contains(&self.chrome.as_str()) {
+            self.chrome = "always".into();
+        }
+        if !["always", "auto", "off"].contains(&self.sidebar.as_str()) {
+            self.sidebar = "always".into();
+        }
+        if !["files", "outline", "recent"].contains(&self.sidebar_tab.as_str()) {
+            self.sidebar_tab = "files".into();
+        }
+        if !["source", "rendered"].contains(&self.view_mode.as_str()) {
+            self.view_mode = "rendered".into();
+        }
     }
 
     /// Written through a temporary file so an interrupted save cannot leave a

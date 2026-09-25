@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
+use pulldown_cmark::{html, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Serialize;
 use syntect::highlighting::Theme as CodeTheme;
 use syntect::html::highlighted_html_for_string;
@@ -46,7 +46,11 @@ fn anchor_for(text: &str, used: &mut Vec<String>) -> String {
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
     let base = base.trim_matches('-').to_string();
-    let base = if base.is_empty() { "section".into() } else { base };
+    let base = if base.is_empty() {
+        "section".into()
+    } else {
+        base
+    };
     let mut candidate = base.clone();
     let mut n = 2;
     while used.contains(&candidate) {
@@ -70,7 +74,10 @@ fn level_number(level: HeadingLevel) -> u8 {
 
 pub fn is_markdown(path: &Path) -> bool {
     matches!(
-        path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref(),
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .as_deref(),
         Some("md") | Some("markdown") | Some("mdown") | Some("mkd") | Some("mkdn") | Some("mdx")
     )
 }
@@ -132,7 +139,9 @@ impl Renderer {
     /// A leading `---` block is metadata, not content. Rendered as markdown it
     /// turns into a rule and a mangled heading.
     fn split_front_matter(text: &str) -> (String, &str) {
-        let Some(rest) = text.strip_prefix("---\n") else { return (String::new(), text) };
+        let Some(rest) = text.strip_prefix("---\n") else {
+            return (String::new(), text);
+        };
         match rest.find("\n---\n") {
             Some(end) => (rest[..end].to_string(), &rest[end + 5..]),
             None => (String::new(), text),
@@ -167,8 +176,8 @@ impl Renderer {
         // Anything that is not markdown, and markdown itself when the source
         // view is asked for, is shown as its own text - coloured in whatever
         // language it is.
-        let as_source = settings.view_mode == "source"
-            || path.map(|p| !is_markdown(p)).unwrap_or(false);
+        let as_source =
+            settings.view_mode == "source" || path.map(|p| !is_markdown(p)).unwrap_or(false);
         if as_source {
             let syntax = match path {
                 Some(p) => self.syntax_for(p),
@@ -197,8 +206,8 @@ impl Renderer {
             .step_by(2)
             .map(|chunk| chunk.len())
             .sum();
-        let colour = settings.syntax_colour
-            && code_bytes <= settings.highlight_limit_kb as usize * 1024;
+        let colour =
+            settings.syntax_colour && code_bytes <= settings.highlight_limit_kb as usize * 1024;
 
         let parser = Parser::new_ext(body_text, Options::all());
         let mut events: Vec<Event> = Vec::new();
@@ -231,14 +240,21 @@ impl Renderer {
                 Event::End(TagEnd::Heading(_)) => {
                     if let Some((level, text)) = heading.take() {
                         let anchor = anchor_for(&text, &mut used_anchors);
-                        outline.push(Heading { level, text: text.clone(), anchor: anchor.clone() });
+                        outline.push(Heading {
+                            level,
+                            text: text.clone(),
+                            anchor: anchor.clone(),
+                        });
                         events.push(Event::Html(
-                            format!("<h{0} id=\"{1}\">{2}</h{0}>", level, anchor, escape(&text)).into(),
+                            format!("<h{0} id=\"{1}\">{2}</h{0}>", level, anchor, escape(&text))
+                                .into(),
                         ));
                     }
                 }
 
-                Event::Start(Tag::Image { dest_url, title, .. }) => {
+                Event::Start(Tag::Image {
+                    dest_url, title, ..
+                }) => {
                     image = Some((dest_url.to_string(), title.to_string(), String::new()));
                 }
                 Event::End(TagEnd::Image) => {
@@ -250,20 +266,26 @@ impl Renderer {
                         events.push(Event::Html(
                             format!(
                                 "<img src=\"{}\" alt=\"{}\" title=\"{}\">",
-                                escape(&resolved), escape(&alt), escape(&title)
+                                escape(&resolved),
+                                escape(&alt),
+                                escape(&title)
                             )
                             .into(),
                         ));
                     }
                 }
 
-                Event::Start(Tag::Link { dest_url, title, .. }) => {
+                Event::Html(raw) | Event::InlineHtml(raw) => events.push(Event::Text(raw)),
+                Event::Start(Tag::Link {
+                    dest_url, title, ..
+                }) => {
                     let target = dest_url.to_string();
                     let tag = if target.starts_with("http://") || target.starts_with("https://") {
                         // Opened in the system browser, never in this window.
                         format!(
                             "<a href=\"{}\" data-external=\"1\" title=\"{}\">",
-                            escape(&target), escape(&title)
+                            escape(&target),
+                            escape(&title)
                         )
                     } else if target.starts_with('#') {
                         format!("<a href=\"{}\">", escape(&target))
@@ -272,7 +294,8 @@ impl Renderer {
                         let absolute = assets::resolve(&target, base);
                         format!(
                             "<a href=\"#\" data-open=\"{}\" title=\"{}\">",
-                            escape(&absolute), escape(&title)
+                            escape(&absolute),
+                            escape(&title)
                         )
                     };
                     events.push(Event::Html(tag.into()));
@@ -317,6 +340,11 @@ impl Renderer {
             )
         };
 
-        Document { html: body, outline, note, front_matter }
+        Document {
+            html: body,
+            outline,
+            note,
+            front_matter,
+        }
     }
 }
