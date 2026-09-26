@@ -36,3 +36,14 @@
 !/assets/
 /assets/*
 !/assets/brand.png
+
+!/src/find.js
+!/src/storage.rs
+!/src/jobs.rs
+!/src/recovery.rs
+!/src/maintenance.rs
+!/tests/
+/tests/*
+!/tests/ui-fixture.js
+!/tests/ui-regressions.js
+!/scripts/check-ui.sh

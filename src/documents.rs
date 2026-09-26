@@ -3,6 +3,11 @@ use std::time::SystemTime;
 
 #[derive(Clone)]
 pub struct Document {
+    pub recovery_key: String,
+    pub format: crate::storage::TextFormat,
+    pub fingerprint: Option<u64>,
+    pub read_only: bool,
+    pub external_changed: bool,
     pub id: u64,
     pub path: Option<PathBuf>,
     pub source: String,
@@ -18,7 +23,17 @@ pub struct Document {
 }
 impl Document {
     pub fn new(path: Option<PathBuf>, source: String) -> Self {
+        let format = crate::storage::TextFormat::from_text(&source);
+        let fingerprint = path
+            .as_ref()
+            .map(|_| crate::storage::fingerprint(source.as_bytes()));
+        let source = crate::storage::normalize(&source);
         Self {
+            recovery_key: crate::recovery::key(),
+            format,
+            fingerprint,
+            read_only: false,
+            external_changed: false,
             id: 0,
             seen_mtime: path
                 .as_ref()
@@ -34,6 +49,15 @@ impl Document {
             selection_start: 0,
             selection_end: 0,
         }
+    }
+    pub fn loaded(path: PathBuf, loaded: crate::storage::Loaded) -> Self {
+        let mut doc = Self::new(None, loaded.source);
+        doc.path = Some(path);
+        doc.seen_mtime = loaded.modified;
+        doc.format = loaded.format;
+        doc.fingerprint = Some(loaded.fingerprint);
+        doc.read_only = loaded.read_only;
+        doc
     }
     pub fn name(&self) -> String {
         self.path

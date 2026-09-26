@@ -8,10 +8,14 @@ mod fonts;
 mod formatting;
 mod icon;
 mod instance;
+mod jobs;
 mod log;
+mod maintenance;
+mod recovery;
 mod render;
 mod root;
 mod settings;
+mod storage;
 #[cfg(test)]
 mod tests;
 mod theme;
@@ -20,16 +24,17 @@ mod tree;
 mod ui;
 
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use serde_json::json;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Window, WindowBuilder};
-use wry::http::{Request, Response};
+use wry::http::Request;
 use wry::{WebView, WebViewBuilder};
 
 use documents::{Document, Documents};
+#[cfg(test)]
 use render::Renderer;
 use settings::Settings;
 
@@ -37,24 +42,61 @@ fn welcome() -> String {
     format!("# {}\n\nYour notes, Markdown and source files in one place.\n\n- **New** starts a note (Ctrl+N).\n- **Open folder** fills the file browser.\n- **Edit** switches to the editor (Ctrl+E).\n- **Options** has themes, fonts and workspace preferences (Ctrl+,).\n\nDrag a file here to open it.\n", root::app_name())
 }
 
-#[derive(Debug)]
 enum UserEvent {
     /// A message from the page.
     Page(String),
+    Rendered {
+        generation: u64,
+        tab: u64,
+        revision: u64,
+        key: String,
+        document: render::Document,
+    },
+    Loaded {
+        task: jobs::OpenTask,
+        result: Result<storage::Loaded, String>,
+    },
+    TreeLoaded {
+        path: PathBuf,
+        request: serde_json::Value,
+        root: bool,
+        serial: u64,
+        result: Result<Vec<tree::Entry>, String>,
+    },
+    DiskChecked {
+        tab: u64,
+        revision: u64,
+        changed: bool,
+    },
+    RecoveryError(String),
     Dropped(PathBuf),
     #[cfg(target_os = "windows")]
     Tray(String),
     /// A second launch handed us a path instead of starting its own window.
-    Handoff(Option<String>),
+    Handoff(Vec<String>),
 }
 
 struct App {
     root: PathBuf,
+    _instance: instance::Guard,
     smoke_started: Option<Instant>,
     settings: Settings,
     preview_theme: Option<String>,
     documents: Documents,
-    renderer: Renderer,
+    render_worker: jobs::RenderWorker,
+    io: jobs::IoWorker,
+    generation: u64,
+    tree_serial: u64,
+    pending_fragment: String,
+    closed_tabs: Vec<Document>,
+    session_restore: Vec<settings::SessionTab>,
+    startup_paths: Vec<PathBuf>,
+    startup_pending: usize,
+    startup_target: Option<PathBuf>,
+    recovery_checked: bool,
+    recovery_pending: std::collections::HashSet<u64>,
+    recovery_flush: Instant,
+    last_disk_check: Instant,
     fonts: Vec<fonts::FontFamily>,
     tray: tray::SystemTray,
     tree_dir: PathBuf,
@@ -115,6 +157,32 @@ impl App {
         t
     }
 
+    fn persist_settings(&mut self) {
+        if self.startup_pending == 0 {
+            self.settings.saved_tabs = self
+                .documents
+                .tabs
+                .iter()
+                .filter_map(|d| {
+                    d.path.as_ref().map(|p| settings::SessionTab {
+                        path: p.to_string_lossy().into_owned(),
+                        scroll: d.scroll,
+                        editing: d.editing,
+                        editor_scroll: d.editor_scroll,
+                        selection_start: d.selection_start,
+                        selection_end: d.selection_end,
+                    })
+                })
+                .take(40)
+                .collect();
+        }
+        let result = self.settings.save(&self.root);
+        if let Err(error) = &result {
+            log::line(&format!("Preferences save failed: {}", error));
+        }
+        self.run_js(format!("window.app.settingsStatus({});",json!({"ok":result.is_ok(),"message":result.err().map(|e|format!("Preferences not saved: {}",e)).unwrap_or_default()})));
+    }
+
     fn send_init(&self) {
         let missing: Vec<&str> = [
             ("ui", self.settings.ui_font.as_str()),
@@ -161,17 +229,53 @@ impl App {
     }
 
     fn send_tree(&mut self, dir: PathBuf) {
-        match tree::list(&dir, self.settings.show_hidden) {
-            Ok(entries) => {
-                let payload = json!({ "dir": dir.display().to_string(), "entries": entries,
-                    "parent": dir.parent().is_some() });
-                self.settings.workspace = dir.display().to_string();
-                self.tree_dir = dir;
-                self.run_js(format!("window.app.setTree({});", payload));
-                let _ = self.settings.save(&self.root);
-            }
-            Err(e) => self.notify(&format!("Cannot read folder: {}", e)),
+        self.tree_serial += 1;
+        self.io.send(jobs::IoTask::Tree {
+            path: dir,
+            hidden: self.settings.show_hidden,
+            request: json!(null),
+            root: true,
+            serial: self.tree_serial,
+        });
+    }
+    fn check_disk(&mut self) {
+        if self.last_disk_check.elapsed() < std::time::Duration::from_secs(2) {
+            return;
         }
+        self.last_disk_check = Instant::now();
+        if let (Some(path), Some(fingerprint)) = (self.path.clone(), self.fingerprint) {
+            if !self.read_only {
+                self.io.send(jobs::IoTask::Check {
+                    tab: self.id,
+                    path,
+                    fingerprint,
+                    revision: self.edit_revision,
+                });
+            }
+        }
+    }
+    fn journal(&mut self, id: u64) {
+        if let Some(doc) = self.documents.get_mut(id) {
+            let draft = doc.dirty.then(|| recovery::Draft {
+                path: doc.path.clone(),
+                source: doc.source.clone(),
+                saved_source: doc.saved_source.clone(),
+                format: doc.format.clone(),
+                fingerprint: doc.fingerprint,
+            });
+            self.io.send(jobs::IoTask::Recovery {
+                root: self.root.clone(),
+                key: doc.recovery_key.clone(),
+                document: draft,
+            });
+        }
+    }
+    fn flush_recovery(&mut self) {
+        let ids: Vec<_> = self.recovery_pending.drain().collect();
+        for id in ids {
+            self.journal(id);
+        }
+        self.recovery_flush = Instant::now();
     }
 
     fn notify(&self, message: &str) {
@@ -220,6 +324,19 @@ impl App {
         if !self.may_close() {
             return false;
         }
+        let closing = self.documents.current().clone();
+        self.io.send(jobs::IoTask::Recovery {
+            root: self.root.clone(),
+            key: closing.recovery_key.clone(),
+            document: None,
+        });
+        let mut closing = closing;
+        closing.source = closing.saved_source.clone();
+        closing.dirty = false;
+        self.closed_tabs.push(closing);
+        if self.closed_tabs.len() > 15 {
+            self.closed_tabs.remove(0);
+        }
         self.documents.remove(id);
         self.activate_tab(self.id);
         true
@@ -228,7 +345,7 @@ impl App {
     fn close_window(&mut self, control_flow: &mut ControlFlow) {
         if self.settings.close_to_tray && self.tray.available() {
             self.remember_window();
-            let _ = self.settings.save(&self.root);
+            self.persist_settings();
             self.window.set_visible(false);
         } else {
             self.quit(control_flow);
@@ -253,16 +370,30 @@ impl App {
         }
         self.activate_tab(original);
         self.remember_window();
-        let _ = self.settings.save(&self.root);
+        self.persist_settings();
+        self.flush_recovery();
+        if !self.io.flush() {
+            self.notify("Still writing recovery data. Please try Quit again.");
+            return;
+        }
+        for doc in &self.documents.tabs {
+            let _ = recovery::write(&self.root, &doc.recovery_key, None);
+        }
         instance::release(&self.root);
         *control_flow = ControlFlow::Exit;
     }
 
     fn render_current(&mut self, scroll: f32) {
         let t = self.theme();
-        let document = self
-            .renderer
-            .render(self.path.as_deref(), &self.source, &self.settings, &t);
+        self.generation = self.render_worker.submit(jobs::RenderTask {
+            generation: 0,
+            tab: self.id,
+            revision: self.edit_revision,
+            path: self.path.clone(),
+            text: self.source.clone(),
+            settings: self.settings.clone(),
+            theme: t.clone(),
+        });
         let name = self.name();
 
         self.send_tabs();
@@ -275,15 +406,13 @@ impl App {
             "selectionStart": self.selection_start,
             "selectionEnd": self.selection_end,
             "dirty": self.dirty,
-            "html": document.html,
-            "outline": document.outline,
-            "note": document.note,
-            "frontMatter": document.front_matter,
+            "encoding": self.format.encoding, "lineEnding":self.format.ending, "readOnly":self.read_only, "externalChanged":self.external_changed,
+            "generation":self.generation,
             "name": name,
             "path": self.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
             "scroll": scroll,
         });
-        self.run_js(format!("window.app.setDocument({});", payload));
+        self.run_js(format!("window.app.beginDocument({});", payload));
         self.run_js(format!(
             "window.app.setEditorText({});",
             json!({
@@ -300,34 +429,89 @@ impl App {
     }
 
     fn open(&mut self, path: PathBuf, new_tab: bool) {
-        let path = path.canonicalize().unwrap_or(path);
-        if let Some(id) = self.documents.find_path(&path) {
-            self.activate_tab(id);
+        self.open_file(path, new_tab, false, String::new());
+    }
+    fn open_file(&mut self, path: PathBuf, new_tab: bool, reload: bool, fragment: String) {
+        if reload && !self.may_close() {
             return;
         }
-        match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                if !new_tab && !self.may_close() {
-                    return;
-                }
-                log::line(&format!("open {} ({} bytes)", path.display(), text.len()));
-                let document = Document::new(Some(path.clone()), text);
-                if new_tab {
-                    self.documents.insert(document);
-                } else {
-                    self.documents.replace(document);
-                }
-                assets::set_scope(path.parent());
-                self.settings.remember(&path);
-                self.render_current(0.0);
-                self.send_recents();
-                if let Some(parent) = path.parent() {
-                    if !path.starts_with(&self.tree_dir) {
-                        self.send_tree(parent.to_path_buf());
-                    }
-                }
+        self.io.send(jobs::IoTask::Open(jobs::OpenTask {
+            restore: false,
+            view: None,
+            path,
+            new_tab,
+            from: self.id,
+            revision: self.edit_revision,
+            reload,
+            fragment,
+            limit: self.settings.plain_text_above_mb,
+        }));
+        self.notify("Opening…");
+    }
+    fn finish_open(&mut self, task: jobs::OpenTask, loaded: storage::Loaded) {
+        if !task.reload {
+            if let Some(id) = self.documents.find_path(&task.path) {
+                self.pending_fragment = task.fragment;
+                self.activate_tab(id);
+                return;
             }
-            Err(e) => self.notify(&format!("Cannot open {}: {}", path.display(), e)),
+        }
+        let prior_fingerprint = self.fingerprint;
+        let prior_path = self.path.clone();
+        if !task.reload
+            && !task.new_tab
+            && self.id == task.from
+            && self.edit_revision == task.revision
+            && !self.may_close()
+        {
+            return;
+        }
+        if self.path.as_ref() == Some(&task.path)
+            && (self.fingerprint != prior_fingerprint || self.path != prior_path)
+        {
+            self.open_file(task.path, task.new_tab, task.reload, task.fragment);
+            return;
+        }
+        if task.reload && (self.id != task.from || self.edit_revision != task.revision) {
+            self.notify("Reload cancelled because the document changed.");
+            return;
+        }
+        let mut document = Document::loaded(task.path.clone(), loaded);
+        if task.reload {
+            document.editing = self.editing;
+            document.scroll = self.scroll;
+            document.editor_scroll = self.editor_scroll;
+            document.selection_start = self.selection_start;
+            document.selection_end = self.selection_end;
+        }
+        if let Some(view) = task.view {
+            document.scroll = view.scroll;
+            document.editing = view.editing && !document.read_only;
+            document.editor_scroll = view.editor_scroll;
+            document.selection_start = view.selection_start;
+            document.selection_end = view.selection_end;
+        }
+        if task.new_tab || self.id != task.from || self.edit_revision != task.revision {
+            self.documents.insert(document);
+        } else {
+            let old = self.documents.current().clone();
+            self.io.send(jobs::IoTask::Recovery {
+                root: self.root.clone(),
+                key: old.recovery_key,
+                document: None,
+            });
+            self.documents.replace(document);
+        }
+        assets::set_scope(task.path.parent());
+        self.settings.remember(&task.path);
+        self.pending_fragment = task.fragment;
+        self.render_current(self.scroll);
+        self.send_recents();
+        self.persist_settings();
+        if !task.path.starts_with(&self.tree_dir) {
+            if let Some(parent) = task.path.parent() {
+                self.send_tree(parent.into());
+            }
         }
     }
 
@@ -352,41 +536,16 @@ impl App {
 
     /// Writes through a temporary file in the same folder, then renames: an
     /// interrupted save cannot leave the note truncated.
+    #[cfg(test)]
     fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
-        use std::io::Write;
-        let filename = path
-            .file_name()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "No filename"))?;
-        let nonce = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let tmp = path.with_file_name(format!(
-            ".{}.{}.{}.tmp",
-            filename.to_string_lossy(),
-            std::process::id(),
-            nonce
-        ));
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)?;
-        let result = (|| {
-            file.write_all(text.as_bytes())?;
-            if let Ok(meta) = std::fs::metadata(path) {
-                file.set_permissions(meta.permissions())?;
-            }
-            file.sync_all()?;
-            drop(file);
-            std::fs::rename(&tmp, path)
-        })();
-        if result.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        result
+        storage::write_atomic(path, text.as_bytes())
     }
 
     fn save(&mut self, text: String, save_as: bool) -> bool {
+        if self.read_only {
+            self.notify("Read-only preview: the original file cannot be overwritten.");
+            return false;
+        }
         let path = match self.path.clone().filter(|_| !save_as) {
             Some(p) => p,
             None => {
@@ -418,31 +577,56 @@ impl App {
         }
         // If the file moved underneath us, say so rather than overwriting.
         let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        if self.path.as_ref() == Some(&path) && self.seen_mtime.is_some() {
-            if current != self.seen_mtime {
-                let choice = rfd::MessageDialog::new()
-                    .set_title("Changed on disk")
-                    .set_description(
-                        "This file changed on disk since it was opened.\n\nOverwrite it?",
-                    )
-                    .set_buttons(rfd::MessageButtons::YesNo)
-                    .show();
-                if choice != rfd::MessageDialogResult::Yes {
-                    self.run_js("window.app.note('save cancelled - file changed on disk');".into());
-                    return false;
-                }
+        if self.path.as_ref() == Some(&path)
+            && self.fingerprint.is_some()
+            && (current != self.seen_mtime
+                || self
+                    .fingerprint
+                    .is_some_and(|hash| storage::disk_fingerprint(&path).ok() != Some(hash)))
+        {
+            let choice = rfd::MessageDialog::new()
+                .set_title("Changed on disk")
+                .set_description("This file changed on disk since it was opened.\n\nOverwrite it?")
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show();
+            if choice != rfd::MessageDialogResult::Yes {
+                self.run_js("window.app.note('save cancelled - file changed on disk');".into());
+                return false;
             }
         }
 
         let new_path = self.path.as_ref() != Some(&path);
-        match Self::write_atomically(&path, &text) {
+        if !new_path
+            && text == self.saved_source
+            && self.fingerprint.is_some()
+            && storage::disk_fingerprint(&path).ok() == self.fingerprint
+        {
+            if self.source != text {
+                self.edit_revision += 1;
+                self.source = text;
+            }
+            self.dirty = false;
+            self.journal(self.id);
+            self.render_current(self.scroll);
+            self.notify("Saved; file content is unchanged.");
+            return true;
+        }
+        let bytes = self.format.encode(&text);
+        match storage::write_atomic(&path, &bytes) {
             Ok(()) => {
+                self.fingerprint = Some(storage::fingerprint(&bytes));
+                self.external_changed = false;
+                if self.source != text {
+                    self.edit_revision += 1;
+                }
                 self.saved_source = text.clone();
                 self.source = text;
                 assets::set_scope(path.parent());
                 self.path = Some(path.clone());
                 self.seen_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                 self.dirty = false;
+                self.journal(self.id);
+                self.persist_settings();
                 self.settings.remember(&path);
                 log::line(&format!("saved {}", path.display()));
                 self.render_current(0.0);
@@ -465,11 +649,13 @@ impl App {
     }
 
     fn apply_setting(&mut self, key: &str, value: serde_json::Value) {
+        let blocked = self.settings.blocked_write;
         let mut current = serde_json::to_value(&self.settings).unwrap_or(json!({}));
         if let Some(map) = current.as_object_mut() {
             map.insert(key.to_string(), value);
         }
         if let Ok(mut updated) = serde_json::from_value::<Settings>(current) {
+            updated.blocked_write = blocked;
             updated.normalize();
             let rerender = matches!(
                 key,
@@ -479,6 +665,7 @@ impl App {
                     | "plain_text_above_mb"
                     | "view_mode"
                     | "syntax_colour"
+                    | "remote_images"
             );
             if key == "theme" {
                 self.preview_theme = None;
@@ -491,7 +678,7 @@ impl App {
             if rerender {
                 self.render_current(self.scroll);
             }
-            let _ = self.settings.save(&self.root);
+            self.persist_settings();
         }
     }
 
@@ -500,7 +687,7 @@ impl App {
             return;
         };
         let command = value.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
-        if command != "scroll" && command != "edit" {
+        if command != "scroll" && command != "edit" && command != "editPatch" {
             log::line(&format!("page: {}", command));
         }
 
@@ -508,7 +695,7 @@ impl App {
             if let Some(view) = value.get("view") {
                 if let Some(doc) = self.documents.get_mut(id) {
                     if let Some(v) = view.get("editing").and_then(|v| v.as_bool()) {
-                        doc.editing = v;
+                        doc.editing = v && !doc.read_only;
                     }
                     if let Some(v) = view.get("scroll").and_then(|v| v.as_f64()) {
                         doc.scroll = v as f32;
@@ -533,9 +720,76 @@ impl App {
                 self.send_tree(dir);
                 let scroll = self.settings.last_scroll;
                 self.render_current(scroll);
+                let paths = std::mem::take(&mut self.startup_paths);
+                for (index, path) in paths.into_iter().enumerate() {
+                    let view = self
+                        .session_restore
+                        .iter()
+                        .find(|view| Path::new(&view.path) == path)
+                        .cloned();
+                    self.io.send(jobs::IoTask::Open(jobs::OpenTask {
+                        restore: true,
+                        view,
+                        path,
+                        new_tab: index > 0,
+                        from: self.id,
+                        revision: self.edit_revision,
+                        reload: false,
+                        fragment: String::new(),
+                        limit: self.settings.plain_text_above_mb,
+                    }));
+                }
+                if !self.recovery_checked {
+                    self.recovery_checked = true;
+                    let drafts = recovery::read(&self.root);
+                    if !drafts.is_empty() {
+                        let choice = rfd::MessageDialog::new()
+                            .set_title("Recover notes")
+                            .set_description(format!(
+                                "{} unsaved note(s) were found. Restore them?",
+                                drafts.len()
+                            ))
+                            .set_buttons(rfd::MessageButtons::YesNo)
+                            .show();
+                        for (key, draft) in drafts {
+                            if choice == rfd::MessageDialogResult::Yes {
+                                let mut doc = Document::new(draft.path, draft.source);
+                                doc.saved_source = draft.saved_source;
+                                doc.format = draft.format;
+                                doc.fingerprint = draft.fingerprint;
+                                doc.dirty = true;
+                                doc.editing = true;
+                                doc.recovery_key = key;
+                                self.documents.insert(doc);
+                            } else if choice == rfd::MessageDialogResult::No {
+                                let _ = recovery::write(&self.root, &key, None);
+                            }
+                        }
+                        if choice == rfd::MessageDialogResult::Yes && self.documents.tabs.len() > 1
+                        {
+                            let welcome_id = self.documents.tabs[0].id;
+                            self.documents.remove(welcome_id);
+                        }
+                        self.activate_tab(self.id);
+                    }
+                }
+                if !self.settings.load_warning.is_empty() {
+                    self.notify(&self.settings.load_warning);
+                }
                 if self.smoke_started.is_some() {
                     self.run_js(include_str!("smoke.js").into());
                 }
+            }
+            "smokeInspect" if self.smoke_started.is_some() => {
+                self.flush_recovery();
+                self.io.flush();
+                let disk = self
+                    .path
+                    .as_ref()
+                    .filter(|p| p.starts_with(&self.root))
+                    .and_then(|p| storage::read(p, 1).ok())
+                    .map(|d| d.source);
+                self.run_js(format!("window.app.smokeState={};",json!({"token":value.get("token"),"source":self.source,"disk":disk,"dirty":self.dirty,"recovery":recovery::read(&self.root).len()})));
             }
             "smokeReady" if self.smoke_started.is_some() => {
                 if value.get("ok").and_then(|v| v.as_bool()) == Some(true) {
@@ -552,7 +806,7 @@ impl App {
                             .unwrap_or("unknown error")
                     );
                 }
-                let _ = self.settings.save(&self.root);
+                self.persist_settings();
                 instance::release(&self.root);
                 *control_flow = ControlFlow::Exit;
             }
@@ -612,6 +866,42 @@ impl App {
                 }
             }
             "viewState" => {}
+            "editPatch" => {
+                let id = value
+                    .get("fromTab")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(self.id);
+                let mut accepted = false;
+                if let Some(doc) = self.documents.get_mut(id) {
+                    if !doc.read_only {
+                        if let (Some(start), Some(end), Some(insert), Some(revision)) = (
+                            value.get("start").and_then(|v| v.as_u64()),
+                            value.get("end").and_then(|v| v.as_u64()),
+                            value.get("insert").and_then(|v| v.as_str()),
+                            value.get("revision").and_then(|v| v.as_u64()),
+                        ) {
+                            if revision == doc.edit_revision + 1
+                                && storage::apply_patch(
+                                    &mut doc.source,
+                                    start as usize,
+                                    end as usize,
+                                    insert,
+                                )
+                            {
+                                doc.edit_revision = revision;
+                                doc.dirty = doc.source != doc.saved_source;
+                                accepted = true;
+                            }
+                        }
+                    }
+                }
+                if accepted {
+                    self.recovery_pending.insert(id);
+                    self.send_tabs();
+                } else {
+                    self.run_js(format!("window.app.resendEditor({});", id));
+                }
+            }
             "edit" => {
                 if let Some(text) = value.get("text").and_then(|t| t.as_str()) {
                     let id = value
@@ -626,11 +916,15 @@ impl App {
                             .and_then(|v| v.as_u64())
                             .unwrap_or(doc.edit_revision + 1);
                         if revision >= doc.edit_revision {
+                            if doc.read_only {
+                                return;
+                            }
                             doc.edit(text.to_owned());
                             doc.edit_revision = revision;
                         }
                         changed = before != doc.dirty;
                     }
+                    self.recovery_pending.insert(id);
                     if changed {
                         self.send_tabs();
                     }
@@ -659,31 +953,77 @@ impl App {
             }
             "reload" => {
                 if let Some(path) = self.path.clone() {
-                    if self.may_close() {
-                        match std::fs::read_to_string(&path) {
-                            Ok(text) => {
-                                let mut doc = Document::new(Some(path), text);
-                                doc.editing = self.editing;
-                                doc.scroll = self.scroll;
-                                self.documents.replace(doc);
-                                self.render_current(self.scroll);
-                            }
-                            Err(e) => self.notify(&format!("Cannot reload: {}", e)),
-                        }
-                    }
+                    self.open_file(path, false, true, String::new());
                 } else {
                     self.notify("Save this note before reloading it.");
+                }
+            }
+            "keepDisk" => {
+                self.external_changed = false;
+                self.notify("Keeping your edits. Saving will still check for a conflict.");
+                self.render_current(self.scroll);
+            }
+            "cleanHistory" => {
+                match maintenance::cleanup(
+                    &self.root,
+                    self.settings.log_retention_days,
+                    self.settings.backup_retention,
+                ) {
+                    Ok((removed, failed)) => self.notify(&format!(
+                        "Cleaned {} old history item(s); {} could not be removed.",
+                        removed, failed
+                    )),
+                    Err(error) => self.notify(&format!("Cleanup failed: {}", error)),
+                }
+            }
+            "clearRecents" => {
+                self.settings.recents.clear();
+                self.send_recents();
+                self.persist_settings();
+            }
+            "reopenTab" => {
+                if let Some(doc) = self.closed_tabs.pop() {
+                    if let Some(path) = doc.path.clone() {
+                        let view = settings::SessionTab {
+                            path: path.to_string_lossy().into_owned(),
+                            scroll: doc.scroll,
+                            editing: doc.editing,
+                            editor_scroll: doc.editor_scroll,
+                            selection_start: doc.selection_start,
+                            selection_end: doc.selection_end,
+                        };
+                        self.io.send(jobs::IoTask::Open(jobs::OpenTask {
+                            restore: false,
+                            view: Some(view),
+                            path,
+                            new_tab: true,
+                            from: self.id,
+                            revision: self.edit_revision,
+                            reload: false,
+                            fragment: String::new(),
+                            limit: self.settings.plain_text_above_mb,
+                        }));
+                    } else {
+                        self.documents.insert(doc);
+                        self.activate_tab(self.id);
+                    }
                 }
             }
             "refreshTree" => self.send_tree(self.tree_dir.clone()),
             "openPath" => {
                 if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
-                    self.open(
+                    self.open_file(
                         PathBuf::from(path),
                         value
                             .get("newTab")
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false),
+                        false,
+                        value
+                            .get("fragment")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
                     );
                 }
             }
@@ -727,14 +1067,13 @@ impl App {
             }
             "expand" => {
                 if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
-                    let result = tree::list(Path::new(path), self.settings.show_hidden);
-                    let (entries, error) = match result {
-                        Ok(entries) => (entries, None),
-                        Err(e) => (Vec::new(), Some(e.to_string())),
-                    };
-                    self.run_js(format!("window.app.setEntries({});", json!({
-                        "path": path, "request": value.get("request"), "entries": entries, "error": error
-                    })));
+                    self.io.send(jobs::IoTask::Tree {
+                        path: path.into(),
+                        hidden: self.settings.show_hidden,
+                        request: value.get("request").cloned().unwrap_or(json!(null)),
+                        root: false,
+                        serial: 0,
+                    });
                 }
             }
             "treeUp" => {
@@ -752,11 +1091,14 @@ impl App {
                     self.notify("Select the document tab before saving it.");
                     return;
                 }
-                let text = value
+                let Some(text) = value
                     .get("text")
                     .and_then(|t| t.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                    .map(str::to_string)
+                else {
+                    self.notify("Save refused: document text was not supplied.");
+                    return;
+                };
                 self.save(text, command == "saveAs");
             }
             "wantSource" => {
@@ -798,11 +1140,12 @@ impl App {
                 self.settings.recents = old.recents;
                 self.settings.last_path = old.last_path;
                 self.settings.workspace = old.workspace;
+                self.settings.blocked_write = old.blocked_write;
                 self.settings.last_scroll = old.last_scroll;
                 self.send_tree(self.tree_dir.clone());
                 self.send_settings();
                 self.render_current(0.0);
-                let _ = self.settings.save(&self.root);
+                self.persist_settings();
             }
             "scroll" => {
                 if let Some(v) = value.get("value").and_then(|v| v.as_f64()) {
@@ -866,37 +1209,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::init(&root);
     log::line(&format!("start root={}", root.display()));
 
-    let argument = std::env::args()
-        .nth(1)
+    let arguments: Vec<PathBuf> = std::env::args()
+        .skip(1)
+        .take(128)
         .map(PathBuf::from)
-        .map(|p| p.canonicalize().unwrap_or(p));
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .collect();
+    let instance_guard = match instance::acquire(&root) {
+        Ok(guard) => guard,
+        Err(error) => {
+            for _ in 0..20 {
+                if instance::hand_off(&root, &arguments) {
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            return Err(
+                format!("A running copy did not acknowledge the request: {}", error).into(),
+            );
+        }
+    };
+    let argument = arguments.first().cloned();
 
-    // A copy already running takes the file and raises its own window.
-    if instance::hand_off(&root, argument.as_deref()) {
-        log::line("handed the file to the running copy");
-        return Ok(());
-    }
-
-    let mut settings = Settings::load(&root);
-    let renderer = Renderer::new();
+    let settings = Settings::load(&root);
     let font_list = fonts::families();
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    let render_worker = jobs::RenderWorker::new(proxy.clone());
+    let io = jobs::IoWorker::new(proxy.clone());
 
     let handoff_proxy = proxy.clone();
-    instance::listen(&root, move |path| {
-        let _ = handoff_proxy.send_event(UserEvent::Handoff(path));
-    });
+    instance::listen(&root, move |paths| {
+        let _ = handoff_proxy.send_event(UserEvent::Handoff(paths));
+    })?;
 
+    let monitor = event_loop.primary_monitor();
+    let bounds = monitor
+        .as_ref()
+        .map(|m| m.size().to_logical::<u32>(m.scale_factor()));
     let window = WindowBuilder::new()
         .with_title(root::app_name())
         .with_decorations(false)
         .with_window_icon(tao::window::Icon::from_rgba(icon::rgba(64), 64, 64).ok())
         .with_min_inner_size(tao::dpi::LogicalSize::new(620.0, 400.0))
         .with_inner_size(tao::dpi::LogicalSize::new(
-            settings.window_width as f64,
-            settings.window_height as f64,
+            settings.window_width.min(
+                bounds
+                    .map(|s| s.width.saturating_sub(32).max(620))
+                    .unwrap_or(7680),
+            ) as f64,
+            settings.window_height.min(
+                bounds
+                    .map(|s| s.height.saturating_sub(64).max(400))
+                    .unwrap_or(4320),
+            ) as f64,
         ))
         .with_maximized(settings.window_maximized)
         .build(&event_loop)?;
@@ -923,12 +1290,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let drop_proxy = proxy.clone();
     let ipc_proxy = proxy.clone();
+    let asset_worker = assets::worker_pool();
     let builder = WebViewBuilder::new()
         .with_html(ui::shell())
         .with_hotkeys_zoom(false)
+        .with_navigation_handler(|url| {
+            url == "about:blank"
+                || url.starts_with("about:blank#")
+                || url == "http://localhost/"
+                || url.starts_with("http://localhost/#")
+        })
+        .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
-                if let Some(path) = paths.first() {
+                for path in paths {
                     let _ = drop_proxy.send_event(UserEvent::Dropped(path.clone()));
                 }
             }
@@ -937,15 +1312,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_ipc_handler(move |request: Request<String>| {
             let _ = ipc_proxy.send_event(UserEvent::Page(request.body().to_string()));
         })
-        .with_custom_protocol("asset".into(), move |_id, request: Request<Vec<u8>>| {
-            let (body, mime, status) = assets::serve(&request.uri().to_string());
-            Response::builder()
-                .status(status)
-                .header("Content-Type", mime)
-                .header("Access-Control-Allow-Origin", "*")
-                .body(std::borrow::Cow::from(body))
-                .unwrap_or_else(|_| Response::new(std::borrow::Cow::from(Vec::new())))
-        });
+        .with_asynchronous_custom_protocol(
+            "asset".into(),
+            move |_id, request: Request<Vec<u8>>, responder| {
+                let _ = asset_worker.send((request.uri().to_string(), responder));
+            },
+        );
 
     #[cfg(target_os = "linux")]
     let webview = {
@@ -971,31 +1343,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or_else(|| initial.as_ref().and_then(|p| p.parent().map(PathBuf::from)))
         .unwrap_or_else(|| root.clone());
 
-    let source = match &initial {
-        Some(p) => match std::fs::read_to_string(p) {
-            Ok(text) => text,
-            Err(e) => {
-                log::line(&format!("initial open failed: {}", e));
-                initial = None;
-                welcome()
+    let source = welcome();
+    let session_restore = settings.saved_tabs.clone();
+    let mut startup_paths = arguments.clone();
+    if startup_paths.is_empty() {
+        if settings.restore_last_file && settings.restore_tabs {
+            startup_paths = session_restore
+                .iter()
+                .map(|s| PathBuf::from(&s.path))
+                .collect();
+        }
+        if startup_paths.is_empty() {
+            if let Some(path) = initial.take() {
+                startup_paths.push(path);
             }
-        },
-        None => welcome(),
-    };
-    if let Some(p) = &initial {
-        assets::set_scope(p.parent());
-        settings.remember(p);
+        }
     }
 
+    let app_last_path = settings.last_path.clone();
+    let startup_target = if arguments.is_empty() && !app_last_path.is_empty() {
+        Some(PathBuf::from(&app_last_path))
+    } else {
+        None
+    };
     let mut app = App {
-        documents: Documents::new(Document::new(initial, source)),
+        _instance: instance_guard,
+        documents: Documents::new(Document::new(None, source)),
         tray,
         tree_dir,
         root: root.clone(),
         smoke_started: std::env::var_os("EXIT_WHEN_READY").map(|_| started),
         settings,
         preview_theme: None,
-        renderer,
+        render_worker,
+        io,
+        generation: 0,
+        tree_serial: 0,
+        pending_fragment: String::new(),
+        closed_tabs: Vec::new(),
+        session_restore,
+        startup_pending: startup_paths.len(),
+        startup_target,
+        startup_paths,
+        recovery_checked: false,
+        recovery_pending: Default::default(),
+        recovery_flush: Instant::now(),
+        last_disk_check: Instant::now(),
         fonts: font_list,
         window,
         webview,
@@ -1007,15 +1400,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = ControlFlow::WaitUntil(Instant::now()+std::time::Duration::from_millis(400));
+        if app.window.is_focused(){app.check_disk();}
+        if app.recovery_flush.elapsed()>std::time::Duration::from_millis(700){app.flush_recovery();}
         match event {
+            Event::UserEvent(UserEvent::Rendered{generation,tab,revision,key,document}) if generation==app.generation&&tab==app.id&&revision==app.edit_revision => {
+                    let fragment=std::mem::take(&mut app.pending_fragment);
+                    app.run_js(format!("window.app.finishDocument({});",json!({"tab":tab,"revision":revision,"generation":generation,"renderKey":key,"html":document.html,"outline":document.outline,"frontMatter":document.front_matter,"note":if app.read_only{"Large file: showing a read-only preview of the first 256 KB.".into()}else{document.note},"fragment":fragment})));
+            }
+            Event::UserEvent(UserEvent::Loaded{task,result})=>{
+                let restoring=task.restore;
+                match result{Ok(loaded)=>app.finish_open(task,loaded),Err(error)=>app.notify(&format!("Cannot open {}: {}",task.path.display(),error))}
+                if restoring{app.startup_pending=app.startup_pending.saturating_sub(1);if app.startup_pending==0{if let Some(target)=app.startup_target.take(){if let Some(id)=app.documents.find_path(&target){app.activate_tab(id);}}app.persist_settings();}}
+            },
+            Event::UserEvent(UserEvent::TreeLoaded{path,request,root,serial,result})=>{
+                if root{if serial==app.tree_serial{match result{Ok(entries)=>{app.tree_dir=path.clone();app.settings.workspace=path.to_string_lossy().into_owned();app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":entries})));app.persist_settings();},Err(error)=>app.notify(&format!("Cannot read folder: {}",error))}}}
+                else{let(entries,error)=match result{Ok(entries)=>(entries,None),Err(error)=>(Vec::new(),Some(error))};app.run_js(format!("window.app.setEntries({});",json!({"path":path.to_string_lossy(),"request":request,"entries":entries,"error":error})));}
+            }
+            Event::UserEvent(UserEvent::DiskChecked{tab,revision,changed})=>{if let Some(doc)=app.documents.get_mut(tab){if revision==doc.edit_revision{doc.external_changed=changed;}}
+                if app.id==tab{app.run_js(format!("window.app.diskStatus({});",app.external_changed));}}
+            Event::UserEvent(UserEvent::RecoveryError(error))=>app.notify(&format!("Draft recovery could not be saved: {}",error)),
+            Event::WindowEvent{event:WindowEvent::Focused(true),..}=>app.check_disk(),
             Event::UserEvent(UserEvent::Page(message)) => app.handle(&message, control_flow),
             Event::UserEvent(UserEvent::Dropped(path)) => app.open(path, true),
-            Event::UserEvent(UserEvent::Handoff(path)) => {
+            Event::UserEvent(UserEvent::Handoff(paths)) => {
                 app.show();
-                if let Some(path) = path {
-                    app.open(PathBuf::from(path), true);
-                }
+                for path in paths { app.open(PathBuf::from(path), true); }
             }
             Event::WindowEvent {
                 event: WindowEvent::DroppedFile(path),

@@ -101,45 +101,10 @@ fn style(input: &str) -> String {
     out.join(";")
 }
 
-fn url(value: &str, image: bool) -> Option<String> {
-    let value = value.trim();
-    if value.is_empty() || value.chars().any(char::is_control) || value.starts_with("//") {
-        return None;
-    }
-    if let Some((scheme, rest)) = value.split_once(':') {
-        let scheme = scheme.to_ascii_lowercase();
-        if matches!(scheme.as_str(), "http" | "https") || (!image && scheme == "mailto") {
-            return Some(format!("{}:{}", scheme, rest));
-        }
-        // A native drive path is a file reference, not a URL scheme.
-        if scheme.len() == 1
-            && scheme.as_bytes()[0].is_ascii_alphabetic()
-            && (rest.starts_with('/') || rest.starts_with('\\'))
-        {
-            return Some(value.into());
-        }
-        if image
-            && scheme == "data"
-            && [
-                "image/png;",
-                "image/jpeg;",
-                "image/gif;",
-                "image/webp;",
-                "image/avif;",
-            ]
-            .iter()
-            .any(|mime| rest.to_ascii_lowercase().starts_with(mime))
-        {
-            return Some(value.into());
-        }
-        return None;
-    }
-    Some(value.into())
-}
-
 struct Formatter<'a> {
     output: RefCell<String>,
     base: Option<&'a Path>,
+    remote: bool,
 }
 impl TokenSink for Formatter<'_> {
     type Handle = ();
@@ -246,25 +211,22 @@ impl TokenSink for Formatter<'_> {
                         "title" => attributes.push(("title", value.into())),
                         "alt" if name == "img" => attributes.push(("alt", value.into())),
                         "href" if name == "a" => {
-                            if let Some(target) = url(value, false) {
-                                if target.starts_with("http:")
-                                    || target.starts_with("https:")
-                                    || target.starts_with("mailto:")
-                                {
-                                    attributes.push(("href", target));
-                                    attributes.push(("data-external", "1".into()));
-                                } else if target.starts_with('#') {
-                                    attributes.push(("href", target));
-                                } else {
-                                    attributes.push(("href", "#".into()));
-                                    attributes
-                                        .push(("data-open", assets::resolve(&target, self.base)));
-                                }
+                            if let Some(target) = assets::external(value) {
+                                attributes.push(("href", target));
+                                attributes.push(("data-external", "1".into()));
+                            } else if value.starts_with('#') {
+                                attributes.push(("href", format!("#{}", assets::fragment(value))));
+                            } else if let Some((path, fragment)) =
+                                assets::local_target(value, self.base)
+                            {
+                                attributes.push(("href", "#".into()));
+                                attributes.push(("data-open", path));
+                                attributes.push(("data-fragment", fragment));
                             }
                         }
                         "src" if name == "img" => {
-                            if let Some(target) = url(value, true) {
-                                attributes.push(("src", assets::url_for(&target, self.base)));
+                            if let Some(target) = assets::image_url(value, self.base, self.remote) {
+                                attributes.push(("src", target));
                             }
                         }
                         "width" | "height" if name == "img" => {
@@ -303,10 +265,16 @@ impl TokenSink for Formatter<'_> {
     }
 }
 
+#[cfg(test)]
 pub fn html(fragment: &str, base: Option<&Path>) -> String {
+    html_with_options(fragment, base, true)
+}
+
+pub fn html_with_options(fragment: &str, base: Option<&Path>, remote: bool) -> String {
     let sink = Formatter {
         output: RefCell::new(String::new()),
         base,
+        remote,
     };
     let input = BufferQueue::default();
     input.push_back(fragment.into());

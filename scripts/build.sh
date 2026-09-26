@@ -35,6 +35,10 @@ build() {
 if [ "$TARGET" != windows ]; then build "" linux ""; fi
 if [ "$TARGET" != linux ]; then
   build x86_64-pc-windows-gnu windows .exe
+  if [ -f "$ROOT/deploy/windows/notepad.exe" ] && [ "$BIN" != notepad ]; then
+    mkdir -p "$ROOT/deploy/windows/legacy"
+    mv "$ROOT/deploy/windows/notepad.exe" "$ROOT/deploy/windows/legacy/$(date +%Y%m%d-%H%M%S)-notepad.exe"
+  fi
   W2VER=$(grep -A1 'name = "webview2-com-sys"' "$REPO/Cargo.lock" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
   W2DLL=$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" -path "*/webview2-com-sys-$W2VER/x64/WebView2Loader.dll" -print -quit)
   test -n "$W2DLL" || { echo "Missing cached WebView2Loader.dll $W2VER"; exit 1; }
@@ -50,6 +54,7 @@ if [ "$INSTALL" = --install ]; then
     if [ -f "$WIN_DEST/$file" ]; then
       mkdir -p "$ARCHIVE"
       cp -p "$WIN_DEST/$file" "$ARCHIVE/$file"
+      printf %s "$BIN" > "$ARCHIVE/.release-backup"
     fi
   done
   install_file() {

@@ -63,11 +63,7 @@ pub fn rgba(size: u32) -> Vec<u8> {
                 }
             }
             for value in sum.iter().take(3) {
-                out.push(if sum[3] == 0 {
-                    0
-                } else {
-                    (value / sum[3]) as u8
-                });
+                out.push(value.checked_div(sum[3]).unwrap_or(0) as u8);
             }
             out.push((sum[3] / 16) as u8);
         }

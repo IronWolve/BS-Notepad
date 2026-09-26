@@ -24,12 +24,27 @@ fn today() -> String {
     loop {
         let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
         let len = if leap { 366 } else { 365 };
-        if d < len { break; }
+        if d < len {
+            break;
+        }
         d -= len;
         y += 1;
     }
     let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let months = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut m = 0;
     while d >= months[m] {
         d -= months[m];
@@ -42,7 +57,10 @@ pub fn init(root: &Path) {
     let dir = root.join("logs");
     let _ = std::fs::create_dir_all(&dir);
     let file = dir.join(format!("{}.log", today()));
-    let _ = STATE.set(Mutex::new(State { file, recent: VecDeque::with_capacity(RING) }));
+    let _ = STATE.set(Mutex::new(State {
+        file,
+        recent: VecDeque::with_capacity(RING),
+    }));
 }
 
 pub fn line(msg: &str) {
@@ -56,13 +74,20 @@ pub fn line(msg: &str) {
     // more time than the offset saves.
     let entry = format!(
         "{:02}:{:02}:{:02}Z {}",
-        stamp / 3600, (stamp % 3600) / 60, stamp % 60, msg
+        stamp / 3600,
+        (stamp % 3600) / 60,
+        stamp % 60,
+        msg
     );
     if s.recent.len() == RING {
         s.recent.pop_front();
     }
     s.recent.push_back(entry.clone());
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&s.file) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&s.file)
+    {
         let _ = writeln!(f, "{}", entry);
     }
 }

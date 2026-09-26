@@ -38,9 +38,19 @@ function wireEditor(node) {
   node.oninput = () => {
     const revision = Number(node.dataset.revision || 0) + 1;
     node.dataset.revision = revision;
-    app.setDirty(true);
-    send({cmd:'edit',text:node.value,revision});
-    app.scheduleMap();
+    const fromTab=Number(node.dataset.documentId||state.activeTab);
+    if(fromTab===state.activeTab)app.setDirty(true);
+    const previous=node._sentText??node.value,next=node.value;
+    let start=0,end=previous.length,nextEnd=next.length;
+    while(start<end&&start<nextEnd&&previous[start]===next[start])start++;
+    if(start&&previous.charCodeAt(start-1)>=0xd800&&previous.charCodeAt(start-1)<=0xdbff)start--;
+    while(end>start&&nextEnd>start&&previous[end-1]===next[nextEnd-1]){end--;nextEnd--;}
+    if(end<previous.length&&previous.charCodeAt(end)>=0xdc00&&previous.charCodeAt(end)<=0xdfff){end++;nextEnd++;}
+    if(node._sentText===undefined)send({cmd:'edit',fromTab,text:next,revision});
+    else send({cmd:'editPatch',fromTab,start,end,insert:next.slice(start,nextEnd),revision});
+    app.patchMap?.(fromTab,revision-1,start,end,next.slice(start,nextEnd),next);
+    node._sentText=next;
+    app.refreshFind?.(); app.updateStatus?.(); app.scheduleMap();
   };
   node.onkeydown = e => {
     if(e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
@@ -59,6 +69,7 @@ function editorFor(id) {
     node.dataset.revision='0';wireEditor(node);editorNodes.set(id,node);$('editor').appendChild(node);
   }
   for(const [key,editor] of editorNodes) { editor.id=key===id?'text':'editor-'+key;editor.hidden=key!==id; }
+  node.dataset.documentId=id;
   node.wrap=state.settings.word_wrap?'soft':'off';node.style.tabSize=state.settings.tab_size||4;
   state.activeTab=id;
   return node;
@@ -117,6 +128,22 @@ app.updateTabDirty = dirty => {
   app.documentChrome();
   const marker=$('document-tabs').querySelector(`[data-id="${state.activeTab}"] .tab-dirty`);if(marker)marker.hidden=!dirty;
 };
+app.documentAnchor=id=>[...$('article').querySelectorAll('[id]')].find(node=>node.id===id || node.id==='doc-heading-'+id);
+app.resendEditor=id=>{const node=editorNodes.get(id);if(node)send({cmd:'edit',fromTab:id,text:node.value,revision:Number(node.dataset.revision)});};
+app.beginDocument=payload=>{
+  if(payload.tab===state.activeTab&&payload.revision<Number(editorNodes.get(payload.tab)?.dataset.revision||0))return;
+  state.pendingDocument=payload;state.renderPending=true;
+  const changed=state.activeTab!==payload.tab||!editorNodes.has(payload.tab);
+  editorFor(payload.tab);if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();}
+  state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
+  app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();
+};
+app.finishDocument=payload=>{
+  const pending=state.pendingDocument,node=editorNodes.get(payload.tab);
+  if(!pending||payload.generation!==pending.generation||payload.tab!==state.activeTab||payload.revision<Number(node?.dataset.revision||0))return;
+  state.renderPending=false;app.setDocument({...pending,...payload});
+};
+app.diskStatus=changed=>{$('disk-change').hidden=!changed;};
 const baseDocument=app.setDocument;
 app.setDocument = payload => {
   if(payload.themeId && payload.themeId !== (state.previewTheme || state.settings.theme)) return;
@@ -124,12 +151,16 @@ app.setDocument = payload => {
   const changed=state.activeTab!==id || !editorNodes.has(id);
   editorFor(id);
   if(changed)pendingViews.set(id,payload);
-  baseDocument(payload);
+  state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;$("text").readOnly=state.readOnly;
+  baseDocument(payload);state.renderRevision=payload.revision??0;
   for(const table of $('article').querySelectorAll('table')) {
+    if(table.parentElement.classList.contains('table-scroll'))continue;
     const wrap=document.createElement('div');wrap.className='table-scroll';table.before(wrap);wrap.appendChild(table);
   }
   for(const image of $('article').querySelectorAll('img')) image.addEventListener('load',()=>app.scheduleReaderLayout(),{once:true});
   app.toggleEdit(payload.editing ?? state.editing,false);
+  app.updateStatus?.();
+  if(payload.fragment)requestAnimationFrame(()=>app.documentAnchor(payload.fragment)?.scrollIntoView({block:'start'}));
   app.scheduleReaderLayout?.();
   app.scheduleMap();
 };
@@ -138,13 +169,13 @@ app.setEditorText = payload => {
   const node=editorNodes.get(data.tab);if(!node)return;
   if((data.revision||0)<Number(node.dataset.revision||0))return;
   if(node.value!==data.text)node.value=data.text;
-  node.dataset.revision=data.revision||0;
+  node.dataset.revision=data.revision||0;node._sentText=node.value;
   const view=pendingViews.get(data.tab);
   if(view) {
     node.setSelectionRange(view.selectionStart||0,view.selectionEnd||0);node.scrollTop=view.editorScroll||0;
     pendingViews.delete(data.tab);
   }
-  app.scheduleMap();
+  app.updateStatus?.(); app.scheduleMap();
 };
 $('tab-new').onclick=()=>$('b-new').click();
 
@@ -180,9 +211,9 @@ async function copyText(text) {
   try { await navigator.clipboard.writeText(text); }
   catch {
     const focus=document.activeElement, temp=document.createElement('textarea');temp.value=text;temp.style.cssText='position:fixed;left:-9999px';document.body.appendChild(temp);temp.select();
-    const ok=document.execCommand('copy');temp.remove();focus?.focus();if(!ok){app.note('Clipboard access is unavailable.');return;}
+    const ok=document.execCommand('copy');temp.remove();focus?.focus();if(!ok){app.note('Clipboard access is unavailable.');return false;}
   }
-  app.note('Copied');
+  app.note('Copied');return true;
 }
 function fileMenu(event,row) {
   event.preventDefault();const path=row.dataset.path,folder=row.classList.contains('dir');
@@ -219,7 +250,7 @@ const softThemeIds = new Set(['rose-stone','warm-clay','cocoa','parchment','jade
 app.themeFamily = id => id.startsWith('bold-') ? 'bold' : softThemeIds.has(id) ? 'soft' : 'classic';
 app.themeFilters = changed => {
   const bar=document.createElement('div');bar.className='theme-filters';bar.setAttribute('role','group');bar.setAttribute('aria-label','Theme collection');
-  for(const [value,label] of [['all','All'],['bold','Bold'],['soft','Soft'],['classic','Classic']]) {
+  for(const [value,label] of [['all','All'],['favorites','Favorites'],['bold','Bold'],['soft','Soft'],['classic','Classic']]) {
     const button=document.createElement('button');button.type='button';button.textContent=label;button.dataset.family=value;button.setAttribute('aria-pressed',String(themeFamily===value));
     button.onclick=()=>{themeFamily=value;for(const b of bar.children)b.setAttribute('aria-pressed',String(b.dataset.family===value));changed();};
     bar.appendChild(button);
@@ -231,7 +262,7 @@ function layoutChoices() {
   const rect=choiceOrigin.getBoundingClientRect(),down=innerHeight-rect.bottom-14,up=rect.top-14;
   const above=down<180&&up>down,available=Math.max(80,above?up:down);
   popup.style.maxHeight=available+'px';
-  $('choice-list').style.maxHeight=Math.max(40,available-12-($('choice-search').hidden?0:$('choice-search').offsetHeight+5)-($('choice-hint').hidden?0:$('choice-hint').offsetHeight+4)-($('choice-families').hidden?0:$('choice-families').offsetHeight+4))+'px';
+  $('choice-list').style.maxHeight=Math.max(40,available-12-($('choice-search').hidden?0:$('choice-search').offsetHeight+5)-($('choice-hint').hidden?0:$('choice-hint').offsetHeight+4)-($('theme-favorite').hidden?0:$('theme-favorite').offsetHeight+4)-($('choice-families').hidden?0:$('choice-families').offsetHeight+4))+'px';
   popup.style.left=Math.max(8,Math.min(rect.left,innerWidth-popup.offsetWidth-8))+'px';
   popup.style.top=Math.max(8,above?rect.top-popup.offsetHeight-6:rect.bottom+6)+'px';
 }
@@ -241,7 +272,7 @@ function markChoice(value) {
 }
 function drawChoices() {
   const query=$('choice-search').value.toLowerCase(),list=$('choice-list');list.replaceChildren();
-  const choices=choiceOptions.filter(o=>o.label.toLowerCase().includes(query)&&(!choiceTheme||query||themeFamily==='all'||app.themeFamily(o.value)===themeFamily));
+  const choices=choiceOptions.filter(o=>o.label.toLowerCase().includes(query)&&(!choiceTheme||query||themeFamily==='all'||(themeFamily==='favorites'?(state.settings.theme_favorites||[]).includes(o.value):app.themeFamily(o.value)===themeFamily)));
   for(const option of choices) {
     const button=document.createElement('button');button.dataset.value=option.value;button.setAttribute('role','option');button.setAttribute('aria-selected',String(option.value===choiceValue));
     if(choiceTheme){
@@ -259,8 +290,8 @@ function drawChoices() {
 function openChoices(anchor,options,value,change,preview=null) {
   closeMenu(false);closeChoices(false);choiceOrigin=anchor;choiceOptions=options;choiceValue=value;choiceChange=change;choicePreview=preview;choiceTheme=!!preview;
   $('choice-families').hidden=!choiceTheme;$('choice-families').replaceChildren();if(choiceTheme)$('choice-families').appendChild(app.themeFilters(drawChoices));
-  anchor.setAttribute('aria-expanded','true');$('choice-search').value='';$('choice-search').hidden=options.length<(choiceTheme?19:9);$('choice-hint').hidden=!choiceTheme;
-  const popup=$('choice-popup');popup.classList.toggle('theme-grid',choiceTheme);popup.style.width=Math.max(choiceTheme?440:220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popup.hidden=false;
+  anchor.setAttribute('aria-expanded','true');$('choice-search').value='';$('choice-search').hidden=options.length<(choiceTheme?19:9);$('choice-hint').hidden=!choiceTheme;$('theme-favorite').hidden=!choiceTheme;app.favoriteLabel();
+  const popup=$('choice-popup');popup.classList.toggle('theme-grid',choiceTheme);popup.style.width=Math.max(choiceTheme?(innerWidth>=1000?620:440):220,Math.min(400,anchor.getBoundingClientRect().width))+'px';popup.hidden=false;
   drawChoices();layoutChoices();syncPopupState();
   if(!$('choice-search').hidden)$('choice-search').focus();
   else (popup.querySelector('[aria-selected=true]') || popup.querySelector('button'))?.focus();
@@ -270,7 +301,7 @@ $('choice-search').oninput=drawChoices;
 app.setThemeControl=()=>{
   const current=state.previewTheme||state.settings.theme,name=state.themes.find(t=>t.id===current)?.name||'Theme';
   const arrow=document.createElement('span');arrow.className='select-arrow';arrow.textContent='▾';arrow.setAttribute('aria-hidden','true');
-  $('b-theme').replaceChildren(arrow);$('b-theme').title=(state.previewTheme?'Preview: ':'Theme: ')+name;$('b-theme').setAttribute('aria-label','Theme: '+name);
+  $('b-theme').replaceChildren(arrow);$('b-theme').title=(state.previewTheme?'Preview: ':'Theme: ')+name;$('b-theme').setAttribute('aria-label','Theme: '+name);app.favoriteLabel?.();
 };
 app.clearThemePreview=()=>{clearTimeout(themePreviewTimer);themePreviewToken++;state.previewTheme=null;app.setThemeControl();};
 app.previewTheme=id=>{
@@ -299,19 +330,25 @@ const HELP = [
  {id:'editing',title:'Writing & saving',paragraphs:[
   'Edit document in the main menu, or Ctrl+E, switches between writing and reading. Save writes the current tab; Save a copy lets you choose another filename. A dot on a tab marks unsaved changes.',
   'If the file changed on disk, the app asks before overwriting it. Reload from the main menu reads the file again after checking your unsaved edits.',
-  'Find works in both the reader and editor. Click the Find icon or press Ctrl+F again to close it. Hold Ctrl while scrolling over the document to zoom, or use Ctrl+Plus and Ctrl+Minus. Ctrl+0 returns to 100%. Ordinary scrolling still moves through the document. Fonts, wrapping, tab width and line spacing are available in Options.'
+  'Find works in both the reader and editor. Use Aa for case matching and W for whole words. Ctrl+H opens replacement controls; Replace All is undoable. Ctrl+G goes to a line. Click the Find icon or press Ctrl+F again to close it. Hold Ctrl while scrolling over the document to zoom, or use Ctrl+Plus and Ctrl+Minus. Ctrl+0 returns to 100%. Ordinary scrolling still moves through the document. Fonts, wrapping, tab width and line spacing are available in Options.'
+ ]},
+ {id:'recovery',title:'Recovery & files',paragraphs:[
+  'Unsaved drafts are journaled separately from your original files after a short interval. If the app stops unexpectedly, the next launch offers to restore them. Recovery is a fallback; keep using Save for important work.',
+  'Saved tabs and their positions reopen at startup when enabled in Options. Ctrl+Shift+T reopens the last closed tab. A Changed on disk notice offers Reload or Keep edits; saving still checks for conflicts.',
+  'The optional status strip shows line, column, encoding and line endings. UTF-8 and marked UTF-16 files keep their format. Large files open as read-only previews of the first 256 KB; the threshold is in Options → Document.',
+  'The main menu can clear recent files or clean old app logs and marked release backups. Retention limits are in Options → Workspace. Unmarked folders and unrelated files are preserved. Options → Document also controls remote images.'
  ]},
  {id:'map',title:'Document map',paragraphs:[
   'The map at the right is a small overview of your current document. Its outlined area shows the visible portion. Click or drag it to move through a long file.',
   'Use the Document map button in the toolbar, the main menu, or Options → Editor to show or hide it. With the map focused, arrow keys and Page Up / Page Down scroll the document.'
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
-  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover bright colors and deeper shades, including amber, burgundy, plum, forest green and deep teal. Use the Bold, Soft and Classic filters to browse the collections. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
+  'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover bright colors and deeper shades, including amber, burgundy, plum, forest green and deep teal. Use the Bold, Soft and Classic filters to browse the collections. Favorite a theme in the menu to keep it in Favorites. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
   'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
-  ['New tab','Ctrl+T / Ctrl+N'],['Open file','Ctrl+O'],['Open folder','Ctrl+Shift+O'],['Save','Ctrl+S'],['Save a copy','Ctrl+Shift+S'],['Close tab','Ctrl+W'],['Next / previous tab','Ctrl+Tab / Ctrl+Shift+Tab'],['Edit / preview','Ctrl+E'],['Find','Ctrl+F'],['Zoom in','Ctrl+Plus'],['Zoom out','Ctrl+Minus'],['Reset zoom','Ctrl+0'],['Mouse zoom','Ctrl+wheel'],['Show / hide files','Ctrl+B'],['Reload file','F5'],['Options','Ctrl+,'],['Help','F1'],['Main menu','Alt+F'],['Quit','Ctrl+Q']
+  ['New tab','Ctrl+T / Ctrl+N'],['Open file','Ctrl+O'],['Open folder','Ctrl+Shift+O'],['Save','Ctrl+S'],['Save a copy','Ctrl+Shift+S'],['Close tab','Ctrl+W'],['Next / previous tab','Ctrl+Tab / Ctrl+Shift+Tab'],['Edit / preview','Ctrl+E'],['Find','Ctrl+F'],['Replace','Ctrl+H'],['Go to line','Ctrl+G'],['Reopen closed tab','Ctrl+Shift+T'],['Zoom in','Ctrl+Plus'],['Zoom out','Ctrl+Minus'],['Reset zoom','Ctrl+0'],['Mouse zoom','Ctrl+wheel'],['Show / hide files','Ctrl+B'],['Reload file','F5'],['Options','Ctrl+,'],['Help','F1'],['Main menu','Alt+F'],['Quit','Ctrl+Q']
  ]}
 ];
 app.drawHelp=()=>{
@@ -349,11 +386,14 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:'Save edits',icon:'save',hint:'Ctrl+S',action:()=>$('b-save').click()},
  {label:'Save a copy…',icon:'saveAs',hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
  {label:'Read again from disk',icon:'reload',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
- {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},null,
+ {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},
+ {label:'Reopen closed tab',icon:'newTab',hint:'Ctrl+Shift+T',action:()=>send({cmd:'reopenTab'})},null,
  {label:state.editing?'Read document':'Edit document',icon:state.editing?'read':'edit',hint:'Ctrl+E',action:()=>$('b-edit').click()},
  {label:state.settings.view_mode==='source'?'Rendered view':'Source view',icon:state.settings.view_mode==='source'?'rendered':'source',hint:'Ctrl+U',action:()=>$('b-view').click()},
  {label:'Document map',icon:'map',checked:!!state.settings.minimap,action:()=>$('b-map').click()},
  {label:'Wrap long lines',icon:'wrap',checked:!!state.settings.word_wrap,action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},
+ {label:'Clear recent files',icon:'closeOthers',action:()=>send({cmd:'clearRecents'})},
+ {label:'Clean old logs and backups',icon:'collapse',action:()=>send({cmd:'cleanHistory'})},
  {label:'Options…',icon:'options',hint:'Ctrl+,',action:()=>app.options(true)},null,
  {label:'Quit '+(state.name||'BS Notepad'),icon:'exit',hint:'Ctrl+Q',action:()=>send({cmd:'quit'})}
 ]);}
@@ -382,14 +422,21 @@ app.drawMap=()=>{
  const canvas=$('map-canvas'),ctx=canvas.getContext('2d');if(!ctx)return;
  const width=$('minimap').clientWidth,height=$('minimap').clientHeight;if(!width||!height)return;
  const dpr=devicePixelRatio||1;canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.scale(dpr,dpr);ctx.clearRect(0,0,width,height);
- const content=state.editing?$('text').value:$('article').innerText;
- const lines=content.split(/\r?\n/),count=Math.min(lines.length,1600),step=lines.length/Math.max(count,1);
- mapHeight=Math.min(height,Math.max(24,lines.length*3.2+12));
+ const signature=state.editing?'edit:'+state.activeTab+':'+$('text').dataset.revision:'read:'+state.activeTab+':'+state.renderRevision+':'+state.settings.view_mode;
+ if(app.mapData?.key!==signature){const text=state.editing?$('text').value:$('article').innerText,starts=[0];let pos=-1;while((pos=text.indexOf('\n',pos+1))!==-1)starts.push(pos+1);app.mapData={key:signature,text,starts};}
+ const {text,starts}=app.mapData,count=Math.min(starts.length,1600),step=starts.length/Math.max(count,1);
+ mapHeight=Math.min(height,Math.max(24,starts.length*3.2+12));
  const lineHeight=Math.min(3.2,(mapHeight-12)/Math.max(count,1)),font=Math.min(2.6,Math.max(.8,lineHeight*.8));
  const style=getComputedStyle(document.documentElement),fg=style.getPropertyValue('--fg'),dim=style.getPropertyValue('--dim'),accent=style.getPropertyValue('--accent'),link=style.getPropertyValue('--link');
  ctx.font=font+'px '+(state.settings.code_font||'monospace');ctx.textBaseline='top';ctx.globalAlpha=.7;
- for(let i=0;i<count;i++){const line=lines[Math.floor(i*step)];ctx.fillStyle=/^\s*(#|\/\/|\/\*)/.test(line)?accent:line.includes('"')||line.includes("'")?link:/^\s*$/.test(line)?dim:fg;ctx.fillText(line.slice(0,180),6,6+i*lineHeight,width-12);}
+ for(let i=0;i<count;i++){const index=Math.floor(i*step),start=starts[index],end=starts[index+1]===undefined?text.length:starts[index+1]-1,line=text.slice(start,Math.min(end,start+180));ctx.fillStyle=/^\s*(#|\/\/|\/\*)/.test(line)?accent:line.includes('"')||line.includes("'")?link:/^\s*$/.test(line)?dim:fg;ctx.fillText(line.slice(0,180),6,6+i*lineHeight,width-12);}
  app.mapPosition();
+};
+app.patchMap=(tab,revision,start,end,insert,text)=>{
+ const cache=app.mapData;if(!cache||cache.key!=='edit:'+tab+':'+revision)return;
+ const prefix=cache.starts.filter(offset=>offset<=start),suffix=cache.starts.filter(offset=>offset>end).map(offset=>offset+insert.length-(end-start));
+ let pos=-1;while((pos=insert.indexOf('\n',pos+1))!==-1)prefix.push(start+pos+1);
+ app.mapData={key:'edit:'+tab+':'+(revision+1),text,starts:[...prefix,...suffix]};
 };
 app.scheduleMap=()=>{clearTimeout(mapTimer);mapTimer=setTimeout(()=>{cancelAnimationFrame(mapFrame);mapFrame=requestAnimationFrame(app.drawMap);},75);};
 let mapDrag=null;
@@ -436,7 +483,7 @@ app.applySettings=settings=>{
    else settings={...settings,zoom:zoomTarget};
  }
  settings={...settings,zoom:Math.round(settings.zoom*100)/100};
- originalSettings(settings);app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
+ originalSettings(settings);app.favoriteLabel?.();app.updateStatus?.();app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
 const originalTheme=app.applyTheme;app.applyTheme=theme=>{if(theme.id&&theme.id!==(state.previewTheme||state.settings.theme))return;originalTheme(theme);app.scheduleMap();};
 new ResizeObserver(()=>{app.scheduleMap();app.scheduleReaderLayout?.();closeChoices(false);closeMenu(false);}).observe($('content-row'));
 
@@ -480,6 +527,7 @@ document.fonts?.ready.then(()=>app.scheduleReaderLayout());
 
 document.addEventListener('pointerdown',e=>{if(!$('menu-popup').hidden&&!$('menu-popup').contains(e.target)&&e.target!==menuOrigin&&!menuOrigin?.contains(e.target))closeMenu(false);if(!$('choice-popup').hidden&&!$('choice-popup').contains(e.target)&&e.target!==choiceOrigin&&!choiceOrigin?.contains(e.target))closeChoices(false);});
 document.addEventListener('keydown',e=>{
+ if($('line-dialog').open)return;
  const ctrl=e.ctrlKey||e.metaKey;
  const popup=!$('menu-popup').hidden?$('menu-popup'):!$('choice-popup').hidden?$('choice-popup'):null;
  if(popup){
@@ -499,9 +547,18 @@ document.addEventListener('keydown',e=>{
  if(e.key==='F1'){e.preventDefault();e.stopImmediatePropagation();app.help(true);return;}
  if($('options').classList.contains('show'))return;
  if(e.altKey&&e.key.toLowerCase()==='f'){e.preventDefault();e.stopImmediatePropagation();mainMenu();return;}
- if(ctrl&&e.key.toLowerCase()==='t'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'new'});}
+ if(ctrl&&!e.shiftKey&&e.key.toLowerCase()==='t'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'new'});}
  else if(ctrl&&e.key.toLowerCase()==='w'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'closeTab',id:state.activeTab});}
  else if(ctrl&&e.key.toLowerCase()==='q'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'quit'});}
+ else if(ctrl&&e.shiftKey&&e.key.toLowerCase()==='t'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'reopenTab'});}
  else if(ctrl&&e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();const tabs=state.tabs||[],index=tabs.findIndex(t=>t.id===state.activeTab);if(tabs.length)send({cmd:'activateTab',id:tabs[(index+(e.shiftKey?-1:1)+tabs.length)%tabs.length].id});}
  else if(e.key==='F5'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'reload'});}
 },true);
+
+app.settingsStatus=payload=>{const message=payload.ok?"Changes save automatically.":payload.message;$("pnote").textContent=message;if(!payload.ok)app.note(message);};
+
+$('disk-reload').onclick=()=>send({cmd:'reload'});
+$('disk-keep').onclick=()=>send({cmd:'keepDisk'});
+
+app.favoriteLabel=()=>{const id=state.previewTheme||state.settings.theme;const saved=(state.settings.theme_favorites||[]).includes(id);$('theme-favorite').textContent=(saved?'★ Unfavorite ':'☆ Favorite ')+(state.themes.find(t=>t.id===id)?.name||'theme');};
+$('theme-favorite').onclick=()=>{const id=state.previewTheme||state.settings.theme,favorites=state.settings.theme_favorites||[];send({cmd:'setting',key:'theme_favorites',value:favorites.includes(id)?favorites.filter(t=>t!==id):[...favorites,id]});};

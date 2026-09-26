@@ -4,10 +4,17 @@
  const until=async(test,label)=>{for(let n=0;n<120;n++){if(test())return;await sleep(25);}throw Error(label);};
  const check=(condition,label)=>{if(!condition)throw Error(label);};
  try {
-  await until(()=>state.tabs?.length===1 && $('text')?.value.length>0,'initial document');
+  await until(()=>state.tabs?.length===1 && !!state.path && !state.renderPending && $('text')?.value.length>0,'initial document');
   check(state.name==='BS Notepad','display name');
   check(!!document.querySelector('#pane-files > div'),'file tree');
+  const inspect=async token=>{send({cmd:'smokeInspect',token});await until(()=>app.smokeState?.token===token,'native inspection');return app.smokeState;};
   const original=state.activeTab,source=$('text').value;
+  check($('text') instanceof HTMLTextAreaElement,'safe editor lookup');
+  $('b-save').click();check((await inspect('saved-original')).disk===source,'save retains document contents');
+  send({cmd:'save'});check((await inspect('missing-text')).disk===source,'missing save text is refused');
+  app.toggleEdit(true);$('text').value=source+'\nSaved edit 😀\n';$('text').dispatchEvent(new Event('input'));$('b-save').click();
+  check((await inspect('edited-save')).disk===source+'\nSaved edit 😀\n','modified text saves correctly');
+  $('text').value=source;$('text').dispatchEvent(new Event('input'));$('b-save').click();await inspect('restored-save');app.toggleEdit(false);send({cmd:'preview'});await until(()=>!state.renderPending,'restored rendering');
   if(source.includes('rendering-smoke')) {
     const span=[...$('article').querySelectorAll('span')].find(node=>node.textContent==='rendering-smoke');
     check(!!span&&getComputedStyle(span).color==='rgb(34, 197, 94)','embedded HTML color');
@@ -23,6 +30,10 @@
   send({cmd:'activateTab',id:draftId});
   await until(()=>state.activeTab===draftId&&$('text').value===draft,'draft restored');
   check(state.dirty&&state.editing,'draft editing state');
+  check((await inspect('draft-journal')).recovery>0,'draft recovery persisted');
+  $('text').value=draft+' 😀';$('text').dispatchEvent(new Event('input'));
+  check((await inspect('unicode-patch')).source===draft+' 😀','native Unicode patch');
+  $('text').value=draft;$('text').dispatchEvent(new Event('input'));await inspect('restore-draft');
   app.help(true);
   await until(()=>$('help-logo').complete&&$('help-logo').naturalWidth>0,'embedded logo');
   check($('help-github').href===state.githubUrl&&state.githubUrl.startsWith('https://'),'help link');
@@ -66,6 +77,8 @@
   await sleep(150);
   $('map-viewport').dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true}));
   check($('text').scrollTop>0,'map scroll');
+  send({cmd:'closeTab',id:original});await until(()=>state.tabs.length===1,'close saved tab');
+  send({cmd:'reopenTab'});await until(()=>state.tabs.length===2&&state.activeTab!==draftId&&$('text').value===source,'reopen closed saved tab');
   window.ipc.postMessage(JSON.stringify({cmd:'smokeReady',ok:true}));
  } catch(error) {
   window.ipc.postMessage(JSON.stringify({cmd:'smokeReady',ok:false,error:String(error)}));

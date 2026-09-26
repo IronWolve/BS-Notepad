@@ -1,6 +1,6 @@
 /// The page shell. Loaded once; everything after that arrives over IPC, so the
 /// document can change without rebuilding the window.
-pub const SHELL: &str = r##"<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Notes</title><meta charset="utf-8"><style>
+pub const SHELL: &str = r##"<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Notes</title><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__SCRIPT_NONCE__'; style-src 'unsafe-inline'; img-src asset: http: https: data:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>
 :root {
  --bg:#1f1f1f; --fg:#d7d7d7; --panel:#181818; --bar:#252526;
  --rule:#343434; --link:#75beff; --dim:#a5a5a5; --accent:#3794ff;
@@ -356,7 +356,7 @@ article th,article td { overflow-wrap:normal; }
 #choice-popup.theme-grid #choice-list button { min-width:0; }
 @media(max-width:460px) { #choice-popup.theme-grid #choice-list { grid-template-columns:1fr; } }
 .theme-setting .sw { display:flex; flex-direction:column; align-items:stretch; }
-.theme-swatches { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.theme-swatches { display:grid; grid-template-columns:repeat(auto-fit,minmax(105px,1fr)); gap:8px; }
 .theme-swatches button { min-width:0; }
 @media(max-width:700px) { .theme-swatches { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .theme-swatches button[hidden] { display:none; }
@@ -364,6 +364,25 @@ article th,article td { overflow-wrap:normal; }
 .theme-setting .theme-filters button,#choice-families .theme-filters button { flex:1; width:auto; min-height:28px; padding:5px 10px; border:0; border-radius:6px; background:transparent; color:var(--dim); font:inherit; justify-content:center; }
 .theme-setting .theme-filters button[aria-pressed=true],#choice-families .theme-filters button[aria-pressed=true] { color:var(--fg); background:color-mix(in srgb,var(--fg) 10%,transparent); }
 .theme-filters button:hover { background:var(--hover); }
+#help-nav,#rail { min-height:0; overflow:auto; }
+#find { flex-wrap:wrap; }
+.find-field { flex:0 1 480px; max-width:480px; }
+#find button[aria-pressed=true] { opacity:1; background:var(--selected); }
+#replace-row { display:flex; justify-content:flex-end; gap:6px; width:100%; }
+#replace-row input { max-width:480px; padding:6px 9px; border:1px solid var(--rule); border-radius:7px; }
+#replace-row button { flex-basis:auto; }
+#document-status { display:flex; gap:16px; justify-content:space-between; font-size:11px; padding:3px 12px; color:var(--dim); }
+#cursor-status { border:0; padding:0; background:transparent; color:inherit; }
+#line-dialog { color:var(--fg); background:var(--bg); border:1px solid var(--rule); border-radius:10px; }
+#line-form { display:flex; align-items:center; gap:10px; flex-wrap:wrap; max-width:420px; }
+#line-number { width:110px; }
+#line-dialog::backdrop { background:#0006; }
+#line-form input,#line-form button { background:var(--panel); color:var(--fg); border:1px solid var(--rule); border-radius:6px; padding:6px; }
+#disk-change { padding:6px 12px; color:var(--fg); background:var(--panel); font-size:12px; }
+#disk-change button { border:1px solid var(--rule); border-radius:5px; padding:3px 8px; margin-left:8px; background:var(--bg); }
+#theme-favorite { flex-shrink:0; color:var(--dim); }
+#choice-popup.theme-grid { max-width:min(620px,calc(100vw - 16px)); }
+@media(min-width:1000px) { #choice-popup.theme-grid #choice-list { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 </style></head><body>
 
 <div id="hot"></div>
@@ -402,9 +421,13 @@ article th,article td { overflow-wrap:normal; }
 
 <div id="find" role="search" aria-label="Find in document">
   <div class="find-field"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="find-text" aria-label="Find in document" placeholder="Find in document…" autocomplete="off" spellcheck="false"><span id="hits" role="status" aria-live="polite"></span></div>
+  <button id="find-case" title="Match case" aria-label="Match case" aria-pressed="false">Aa</button>
+  <button id="find-word" title="Whole word" aria-label="Whole word" aria-pressed="false">W</button>
+  <button id="find-replace" title="Replace" aria-label="Show replacement" aria-expanded="false">↔</button>
   <button id="find-prev" aria-label="Previous match" title="Previous match (Shift+Enter)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button>
   <button id="find-next" aria-label="Next match" title="Next match (Enter)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6 6 6-6"/></svg></button>
   <button id="find-close" aria-label="Close Find" title="Close Find (Esc)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
+  <div id="replace-row" hidden><input id="replace-text" aria-label="Replacement text" placeholder="Replace with…"><button id="replace-one">Replace</button><button id="replace-all">All</button></div>
 </div>
 
 <div id="row">
@@ -437,13 +460,16 @@ article th,article td { overflow-wrap:normal; }
       <button id="tab-new" aria-label="New tab" title="New tab (Ctrl+T)">+</button>
 
     </div>
+    <div id="disk-change" hidden>Changed on disk <button id="disk-reload">Reload</button><button id="disk-keep">Keep edits</button></div>
     <div id="content-row" role="tabpanel"><div id="content-main">
     <div id="fm"></div>
     <div id="doc"><article id="article"></article></div>
     <div id="editor"><textarea id="text" aria-label="Document editor" spellcheck="false"></textarea></div>
     </div><aside id="minimap" aria-label="Document map"><canvas id="map-canvas" aria-hidden="true"></canvas><div id="map-viewport" role="scrollbar" tabindex="0" aria-label="Document map position" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-controls="doc"></div></aside></div>
+  <div id="document-status"><button id="cursor-status" title="Go to line (Ctrl+G)">Read mode</button><span id="format-status"></span></div>
   </div>
 </div>
+<dialog id="line-dialog"><form id="line-form"><label for="line-number">Go to line</label><input id="line-number" type="number" min="1" required><button type="submit">Go</button><button type="button" id="line-cancel">Cancel</button></form></dialog>
 
 <div id="options"><div id="panel" role="dialog" aria-modal="true" aria-labelledby="options-title">
   <div id="phead"><h2 id="options-title">Options</h2><input id="search" aria-label="Search settings" placeholder="Search settings"><button id="opt-x" aria-label="Close options">×</button></div>
@@ -463,14 +489,17 @@ article th,article td { overflow-wrap:normal; }
   <footer id="help-foot"><a id="help-github" href="#">GitHub · IronWolve ↗</a><span>F1 opens Help</span><button id="help-done">Done</button></footer>
 </section></div>
 <div id="menu-popup" class="popup" role="menu" hidden></div>
-<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-families" hidden></div><div id="choice-list" role="listbox"></div><div id="choice-hint" hidden>Hover to preview · Click to save</div></div>
+<div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-families" hidden></div><div id="choice-list" role="listbox"></div><button id="theme-favorite" hidden></button><div id="choice-hint" hidden>Hover to preview · Click to save</div></div>
 <div id="resize-edges" aria-hidden="true"><i data-direction="n"></i><i data-direction="s"></i><i data-direction="e"></i><i data-direction="w"></i><i data-direction="nw"></i><i data-direction="ne"></i><i data-direction="sw"></i><i data-direction="se"></i></div>
-<script>
-const $ = id => document.getElementById(id);
+<script nonce="__SCRIPT_NONCE__">
+const shellNodes = new Map([...document.querySelectorAll('[id]')].map(node=>[node.id,node]));
+const $ = id => id === 'text' ? shellNodes.get('editor').querySelector('textarea:not([hidden])') : shellNodes.get(id) || document.getElementById(id);
 const send = o => {
  if(o.cmd === "quit" || o.cmd === "closeWindow") app.flushZoom?.();
- const editor=$("text"), doc=$("doc");
- window.ipc.postMessage(JSON.stringify({...o,fromTab:state.activeTab,view:{editing:state.editing,scroll:doc.scrollTop/(doc.scrollHeight||1),editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0}}));
+ const fromTab=o.fromTab??state.activeTab,editor=fromTab===state.activeTab?$("text"):editorNodes.get(fromTab),doc=$("doc");
+ const view={editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0};
+ if(fromTab===state.activeTab){view.editing=state.editing;view.scroll=doc.scrollTop/(doc.scrollHeight||1);}
+ window.ipc.postMessage(JSON.stringify({...o,fromTab,view}));
 };
 const ICONS = {"edit": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4\"/></svg>", "preview": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "source": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>", "chevron": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\"/></svg>"};
 function setCommand(id, icon, label) { $(id).innerHTML = ICONS[icon] + '<span class="button-label">' + label + '</span>'; }
@@ -571,12 +600,12 @@ let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
   Appearance: ["text_contrast", "theme", "chrome", "zoom"],
-  Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "close_to_tray"],
-  Editor: ["word_wrap", "tab_size", "minimap"],
+  Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
+  Editor: ["word_wrap", "tab_size", "minimap", "status_bar"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "body_size",
           "code_size", "line_height", "ligatures"],
   Document: ["view_mode", "syntax_colour", "highlight_limit_kb",
-             "plain_text_above_mb"],
+             "plain_text_above_mb", "remote_images"],
 };
 const CHOICES = {
   view_mode: ["rendered", "source"],
@@ -585,6 +614,8 @@ const CHOICES = {
   sidebar_tab: ["files", "outline", "recent"],
 };
 const LABELS = {
+ status_bar:["Document status","Show line, column, encoding and line endings."],
+ remote_images:["Remote images","Load pictures hosted on websites in documents."],
  minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
  text_contrast:["Text contrast","0 keeps the palette. 100 gives the strongest text: darker on light backgrounds, lighter on dark. Surfaces stay unchanged."],
  theme:["Color theme","Colors for the editor, reader and workspace."],
@@ -593,7 +624,10 @@ const LABELS = {
  sidebar_width:["Sidebar width","Width in pixels; drag the divider to resize."],
  sidebar_tab:["Sidebar tab","Choose Files, Outline or Recent."],
  show_hidden:["Show hidden files","Include files and folders beginning with a dot."],
- restore_last_file:["Reopen last file","Continue with your last document at startup."],
+ restore_tabs:["Reopen saved tabs","Restore saved files and their reading positions at startup."],
+ log_retention_days:["Keep logs (days)","Used by Clean history; unrelated files are never removed."],
+ backup_retention:["Keep release backups","Used by Clean history; keep at least one rollback copy."],
+ restore_last_file:["Reopen on startup","Continue with your last document, or your saved tabs when enabled."],
  close_to_tray:["Close to system tray","Keep the note open in the Windows tray. Use Quit to exit."],
  word_wrap:["Word wrap","Wrap long lines in the editor."], tab_size:["Tab width","Spaces inserted by Tab, from 1 to 8."],
  ui_font:["Interface font","Toolbar, file browser and options."], body_font:["Reading font","Rendered Markdown paragraphs and headings."], code_font:["Code font","Editor and code blocks; monospace fonts."],
@@ -602,9 +636,9 @@ const LABELS = {
  zoom:["Document zoom","Ctrl+wheel or Ctrl+Plus/Minus changes zoom. Ctrl+0 returns to 100%."], view_mode:["Reading mode","Rendered Markdown or syntax-colored source."],
  syntax_colour:["Syntax highlighting","Color source files and fenced code blocks."],
  highlight_limit_kb:["Highlight limit","Skip syntax highlighting above this size in KB."],
- plain_text_above_mb:["Large file threshold","Show files above this size in MB as plain text."]
+ plain_text_above_mb:["Large-file preview threshold","Above this size in MB, open a read-only preview of the first 256 KB. Maximum editable file size is 32 MB."]
 };
-const RANGES = { text_contrast:[0,100,5], ui_size:[10,28,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,100,1] };
+const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], ui_size:[10,28,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
 const choiceLabel = x => ({always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
@@ -676,7 +710,7 @@ const app = {
     if ($("options").classList.contains("show")) app.drawOptions();
   },
   setDocument(d) {
-    $("article").innerHTML = d.html;
+    if($("article").dataset.renderKey !== d.renderKey || !d.renderKey) { clearMarks(); $("article").innerHTML = d.html; $("article").dataset.renderKey=d.renderKey || ""; }
     state.path = d.path || "";
     app.note(d.note || "");
     $("fm").textContent = d.frontMatter || "";
@@ -687,7 +721,7 @@ const app = {
     $("doc").scrollTop = (d.scroll || 0) * $("doc").scrollHeight;
     app.setDirty(!!d.dirty);
     for (const row of document.querySelectorAll("#pane-files [data-path], #pane-recent [data-path]")) { const current=samePath(row.dataset.path,state.path); row.classList.toggle("current",current); row.setAttribute("aria-current",String(current)); }
-    if ($("find").classList.contains("show")) runFind($("find-text").value);
+    app.refreshFind?.();
   },
   setEditorText(t) { if ($("text").value !== t) $("text").value = t; },
   note(t) { clearTimeout(noteTimer); $("note").textContent = t || ""; if (t) noteTimer = setTimeout(() => $("note").textContent = "", 9000); },
@@ -706,7 +740,7 @@ const app = {
       const symbol=document.createElement("span");symbol.className="outline-symbol";symbol.textContent="#";symbol.setAttribute("aria-hidden","true");
       const label=document.createElement("span");label.className="file-label";label.textContent=h.text;el.append(symbol,label);
       el.onclick = () => {
-        const target = document.getElementById(h.anchor);
+        const target = app.documentAnchor(h.anchor);
         if (target) target.scrollIntoView({ block:"start" });
       };
       pane.appendChild(el);
@@ -803,11 +837,12 @@ const app = {
   },
   addCopyButtons() {
     for (const pre of document.querySelectorAll("#article pre")) {
+      if(pre.querySelector(":scope > .copy"))continue;
       const b = document.createElement("button");
       b.className = "copy"; b.textContent = "Copy";
-      b.onclick = () => {
-        navigator.clipboard.writeText(pre.innerText.replace(/\nCopy$/, ""));
-        b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1200);
+      b.onclick = async () => {
+        const content=pre.cloneNode(true);content.querySelectorAll('button').forEach(button=>button.remove());
+        if(await copyText(content.textContent)){b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1200);}
       };
       pre.appendChild(b);
     }
@@ -815,10 +850,12 @@ const app = {
   wireLinks() {
     for (const a of document.querySelectorAll("#article a")) {
       if (a.dataset.external) a.onclick = e => { e.preventDefault(); send({ cmd:"external", url:a.getAttribute("href") }); };
-      else if (a.dataset.open) a.onclick = e => { e.preventDefault(); send({ cmd:"openPath", path:a.dataset.open }); };
+      else if (a.dataset.open) a.onclick = e => { e.preventDefault(); send({ cmd:"openPath", path:a.dataset.open, fragment:a.dataset.fragment || "" }); };
+      else if(a.getAttribute("href")?.startsWith("#"))a.onclick=e=>{e.preventDefault();app.documentAnchor(decodeURIComponent(a.getAttribute("href").slice(1)))?.scrollIntoView({block:"start"});};
     }
   },
   toggleEdit(on, notify = true) {
+    if(on && state.readOnly){if(notify)app.note("This large file is a read-only preview.");on=false;}
     state.editing = on;
     $("editor").classList.toggle("show", on);
     $("doc").style.display = on ? "none" : "";
@@ -827,11 +864,12 @@ const app = {
     $("b-edit").setAttribute("aria-pressed",String(on));
     setCommand("b-edit",on ? "preview" : "edit",on ? "Preview" : "Edit");
     $("fm").hidden = on;
-    if (on) $("text").focus();
+    if (on && notify) $("text").focus();
+    app.updateStatus?.();
     if (notify) send({cmd:"viewState"});
     app.scheduleMap?.();
     app.scheduleReaderLayout?.();
-    if ($("find").classList.contains("show")) runFind($("find-text").value);
+    app.refreshFind?.();
   },
   options(open) {
     $("options").classList.toggle("show", open);
@@ -853,7 +891,7 @@ const app = {
     app.drawOptions();
   },
   drawOptions() {
-    const focusKey = document.activeElement?.dataset.setting;
+    const focusKey = document.activeElement?.dataset.setting || document.activeElement?.closest("[data-setting]")?.dataset.setting;
     const focusTheme = document.activeElement?.dataset.theme;
     const query = ($("search").value || "").toLowerCase();
     for (const b of $("rail").children)
@@ -873,7 +911,7 @@ const app = {
     }
     if (!box.children.length)
       box.innerHTML = '<div class="grp" style="color:var(--dim)">Nothing matches.</div>';
-    if (focusKey) box.querySelector(`[data-setting="${focusKey}"]`)?.focus();
+    if (focusKey) { const control=box.querySelector(`[data-setting="${focusKey}"]`); (control?.querySelector("input") || control)?.focus(); }
     if (focusTheme) box.querySelector(`[data-theme="${focusTheme}"]`)?.focus();
   },
   settingRow(key) {
@@ -898,7 +936,7 @@ const app = {
       row.classList.add("theme-setting");
       control.setAttribute("role", "group");
       const swatches=document.createElement("div");swatches.className="theme-swatches";
-      const filter=()=>{for(const b of swatches.children)b.hidden=themeFamily!=="all"&&app.themeFamily(b.dataset.theme)!==themeFamily;app.scheduleDialogFit?.();};
+      const filter=()=>{for(const b of swatches.children)b.hidden=themeFamily!=="all"&&(themeFamily==='favorites'?!(state.settings.theme_favorites||[]).includes(b.dataset.theme):app.themeFamily(b.dataset.theme)!==themeFamily);app.scheduleDialogFit?.();};
       control.appendChild(app.themeFilters(filter));
       for (const t of state.themes) {
         const b = document.createElement("button");
@@ -962,7 +1000,7 @@ const app = {
     reset.textContent = "\u21ba";
     reset.title = "Reset " + (LABELS[key]?.[0] || key);
     reset.setAttribute("aria-label", reset.title);
-    reset.onclick = () => key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
+    reset.onclick = () => key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
     row.appendChild(reset);
     return row;
   },
@@ -970,50 +1008,7 @@ const app = {
 };
 window.app = app;
 
-// find in page
-let marks = [], at = -1, editorHits = [];
-function clearMarks() {
-  for (const m of marks) { const p = m.parentNode; p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }
-  marks = []; editorHits = []; at = -1; $("hits").textContent = "";
-  $("find-prev").disabled = $("find-next").disabled = true;
-}
-function runFind(text) {
-  clearMarks();
-  if (!text) return;
-  if (state.editing) {
-    const haystack = $("text").value.toLowerCase(), needle = text.toLowerCase();
-    let pos = 0;
-    while ((pos = haystack.indexOf(needle, pos)) !== -1) { editorHits.push(pos); pos += needle.length; }
-    at = editorHits.length ? 0 : -1;
-    focusMark(); return;
-  }
-  const walker = document.createTreeWalker($("article"), NodeFilter.SHOW_TEXT);
-  const targets = []; let node;
-  while ((node = walker.nextNode())) if (node.nodeValue.toLowerCase().includes(text.toLowerCase())) targets.push(node);
-  for (const t of targets) {
-    const parts = t.nodeValue.split(new RegExp("(" + text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig"));
-    const frag = document.createDocumentFragment();
-    for (const p of parts) {
-      if (p.toLowerCase() === text.toLowerCase() && p) { const m = document.createElement("mark"); m.textContent = p; marks.push(m); frag.appendChild(m); }
-      else frag.appendChild(document.createTextNode(p));
-    }
-    t.parentNode.replaceChild(frag, t);
-  }
-  $("hits").textContent = marks.length ? "1 of " + marks.length : "No matches";
-  if (marks.length) { at = 0; focusMark(); }
-}
-function focusMark() {
-  $("find-prev").disabled = $("find-next").disabled = !(state.editing ? editorHits.length : marks.length);
-  if (state.editing) {
-    $("hits").textContent = editorHits.length ? (at + 1) + " of " + editorHits.length : "No matches";
-    if (at >= 0) { const text = $("text"); text.setSelectionRange(editorHits[at], editorHits[at] + $("find-text").value.length); text.scrollTop = text.value.slice(0, editorHits[at]).split("\n").length * parseFloat(getComputedStyle(text).lineHeight) - text.clientHeight/2; }
-    return;
-  }
-  marks.forEach((m, i) => m.classList.toggle("on", i === at));
-  if (marks[at]) marks[at].scrollIntoView({ block:"center" });
-  $("hits").textContent = (at + 1) + " of " + marks.length;
-}
-function step(d) { const n = state.editing ? editorHits.length : marks.length; if (!n) return; at = (at + d + n) % n; focusMark(); }
+/* FIND_UI */
 
 let pinned = false;
 $("hot").onmouseenter = () => $("bar").classList.add("show");
@@ -1130,6 +1125,7 @@ $("doc").onscroll = () => {
 };
 
 document.addEventListener("keydown", e => {
+  if($("line-dialog").open)return;
   const ctrl = e.ctrlKey || e.metaKey;
   if ($("options").classList.contains("show")) {
     if (e.key === "Escape") { e.preventDefault(); app.options(false); }
@@ -1149,6 +1145,8 @@ document.addEventListener("keydown", e => {
   else if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); send({ cmd:"save", text:$("text").value }); }
   else if (ctrl && e.key.toLowerCase() === "e") { e.preventDefault(); $("b-edit").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "b") { e.preventDefault(); $("b-side").onclick(); }
+  else if (ctrl && e.key.toLowerCase() === "g") { e.preventDefault(); app.goToLine(); }
+  else if (ctrl && e.key.toLowerCase() === "h") { e.preventDefault(); app.showFind(true); $("replace-row").hidden=false; $("find-replace").setAttribute("aria-expanded","true"); $("replace-text").focus(); }
   else if (ctrl && e.key.toLowerCase() === "f") { e.preventDefault(); $("b-find").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "u") { e.preventDefault(); $("b-view").onclick(); }
   else if (ctrl && !e.altKey && (e.key === "=" || e.key === "+" || e.code === "NumpadAdd")) { e.preventDefault(); $("b-zoomin").onclick(); }
@@ -1161,7 +1159,19 @@ document.addEventListener("keydown", e => {
 send({ cmd:"ready" });
 </script></body></html>"##;
 
-
 pub fn shell() -> String {
-    SHELL.replace("/* WORKSPACE_UI */", include_str!("workspace.js"))
+    use std::hash::{BuildHasher, Hasher};
+    let nonce = format!(
+        "{:016x}{:016x}",
+        std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish(),
+        std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish()
+    );
+    SHELL
+        .replace("/* WORKSPACE_UI */", include_str!("workspace.js"))
+        .replace("/* FIND_UI */", include_str!("find.js"))
+        .replace("__SCRIPT_NONCE__", &nonce)
 }

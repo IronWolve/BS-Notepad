@@ -88,12 +88,14 @@ fn settings_upgrade_reveals_controls_and_keeps_user_fonts() {
 #[test]
 fn settings_persist_autohide_and_clamp_invalid_sizes() {
     let f = Fixture::new();
-    let mut s = Settings::default();
-    s.chrome = "auto".into();
-    s.sidebar = "off".into();
-    s.sidebar_width = 0;
-    s.tab_size = 100;
-    s.zoom = -1.;
+    let s = Settings {
+        chrome: "auto".into(),
+        sidebar: "off".into(),
+        sidebar_width: 0,
+        tab_size: 100,
+        zoom: -1.,
+        ..Default::default()
+    };
     s.save(&f.0).unwrap();
     let s = Settings::load(&f.0);
     assert_eq!(s.chrome, "auto");
@@ -354,4 +356,227 @@ fn unknown_saved_theme_normalizes_to_the_rendered_fallback() {
     std::fs::write(f.0.join("settings.json"), r#"{"theme":"removed-theme"}"#).unwrap();
     let settings = Settings::load(&f.0);
     assert_eq!(settings.theme, "dark");
+}
+
+#[test]
+fn audit_headings_links_limits_and_front_matter() {
+    let renderer = Renderer::new();
+    let settings = Settings {
+        highlight_limit_kb: 1,
+        ..Settings::default()
+    };
+    let theme = theme::find("light");
+    let doc=renderer.render(Some(Path::new("note.md")),"# Text\n# Editor\n# Panel\n# Minimap\n[mail](mailto:a@example.invalid) [section](next.md#part) ![picture](my%20picture.png)",&settings,&theme);
+    for id in ["text", "editor", "panel", "minimap"] {
+        assert!(doc.html.contains(&format!("id=\"doc-heading-{}\"", id)));
+        assert!(!doc.html.contains(&format!("id=\"{}\"", id)));
+    }
+    assert!(doc.html.contains("data-external=\"1\""));
+    assert!(doc.html.contains("data-fragment=\"doc-heading-part\""));
+    assert!(doc.html.contains("my%20picture.png"));
+    assert!(!doc.html.contains("my%2520"));
+    let code = "let value=42;\n".repeat(200);
+    for (path, text) in [
+        ("source.rs", code.clone()),
+        ("note.md", format!("~~~rust\n{code}~~~\n")),
+        ("note.md", format!("```rust\n{code}```\n")),
+        ("note.md", format!("    {}", code.replace('\n', "\n    "))),
+    ] {
+        assert!(!renderer
+            .render(Some(Path::new(path)), &text, &settings, &theme)
+            .html
+            .contains("<span style="));
+    }
+    for text in [
+        "---\r\ntitle: Example\r\n---\r\nBody",
+        "---\ntitle: Example\n---",
+    ] {
+        assert_eq!(
+            renderer.render(None, text, &settings, &theme).front_matter,
+            "title: Example"
+        );
+    }
+}
+#[test]
+fn audit_storage_formats_limits_and_unicode_patches() {
+    let f = Fixture::new();
+    let path = f.0.join("test.txt");
+    for encoding in ["UTF-8", "UTF-8 BOM", "UTF-16 LE", "UTF-16 BE"] {
+        for ending in ["LF", "CRLF", "CR"] {
+            let format = storage::TextFormat {
+                encoding: encoding.into(),
+                ending: ending.into(),
+            };
+            let bytes = format.encode("Hello 😀\nWorld\n");
+            std::fs::write(&path, &bytes).unwrap();
+            let loaded = storage::read(&path, 1).unwrap();
+            assert_eq!(loaded.source, "Hello 😀\nWorld\n");
+            assert_eq!(loaded.format, format);
+            assert_eq!(loaded.format.encode(&loaded.source), bytes);
+        }
+    }
+    std::fs::write(&path, vec![b'a'; 2 * 1024 * 1024]).unwrap();
+    let large = storage::read(&path, 1).unwrap();
+    assert!(large.read_only);
+    assert_eq!(large.source.len(), storage::PREVIEW_BYTES);
+    let mut text = "A😀B".to_string();
+    assert!(!storage::apply_patch(&mut text, 2, 3, "x"));
+    assert!(storage::apply_patch(&mut text, 1, 3, "😎"));
+    assert_eq!(text, "A😎B");
+}
+#[test]
+fn audit_settings_backup_and_recovery() {
+    let f = Fixture::new();
+    let mut s = Settings {
+        theme: "sage".into(),
+        ..Settings::default()
+    };
+    s.save(&f.0).unwrap();
+    s.theme = "light".into();
+    s.save(&f.0).unwrap();
+    std::fs::write(f.0.join("settings.json"), "broken").unwrap();
+    let recovered = Settings::load(&f.0);
+    assert_eq!(recovered.theme, "sage");
+    assert!(!recovered.load_warning.is_empty());
+    assert!(std::fs::read_dir(&f.0).unwrap().any(|e| e
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .starts_with("settings.corrupt-")));
+    let key = recovery::key();
+    let draft = recovery::Draft {
+        path: None,
+        source: "Unsaved 😀".into(),
+        saved_source: String::new(),
+        format: Default::default(),
+        fingerprint: None,
+    };
+    recovery::write(&f.0, &key, Some(&draft)).unwrap();
+    assert_eq!(recovery::read(&f.0)[0].1.source, draft.source);
+    recovery::write(&f.0, &key, None).unwrap();
+    assert!(recovery::read(&f.0).is_empty());
+    assert!(recovery::write(&f.0, "../bad", None).is_err());
+    let mut bounds = Settings {
+        window_width: u32::MAX,
+        window_height: 0,
+        ..Settings::default()
+    };
+    bounds.normalize();
+    assert_eq!((bounds.window_width, bounds.window_height), (7680, 400));
+}
+#[test]
+fn audit_instance_lock_and_acknowledgment() {
+    let f = Fixture::new();
+    let guard = instance::acquire(&f.0).unwrap();
+    assert!(instance::acquire(&f.0).is_err());
+    let (tx, rx) = std::sync::mpsc::channel();
+    instance::listen(&f.0, move |paths| {
+        let _ = tx.send(paths);
+    })
+    .unwrap();
+    assert!(instance::hand_off(&f.0, &[PathBuf::from("note.md")]));
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
+        ["note.md"]
+    );
+    let endpoint: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(f.0.join("instance.port")).unwrap()).unwrap();
+    let held = std::net::TcpStream::connect(format!("127.0.0.1:{}", endpoint["port"])).unwrap();
+    assert!(instance::hand_off(&f.0, &[]));
+    drop(held);
+    drop(guard);
+    assert!(instance::acquire(&f.0).is_ok());
+}
+#[test]
+fn export_browser_fixture() {
+    let source = "# Text\n\nHello **beautiful** world.\n\n```text\npayload\n```\n";
+    let settings = Settings::default();
+    let rendered = Renderer::new().render(
+        Some(Path::new("audit.md")),
+        source,
+        &settings,
+        &theme::find(&settings.theme),
+    );
+    let mut bootstrap = include_str!("../tests/ui-fixture.js").to_string();
+    for (key, value) in [
+        ("FIXTURE_SOURCE", json!(source)),
+        ("FIXTURE_RENDER", json!(rendered.html)),
+        ("FIXTURE_SETTINGS", json!(settings)),
+        ("FIXTURE_THEMES", json!(theme::builtin())),
+        ("FIXTURE_NAME", json!(root::app_name())),
+        ("FIXTURE_VERSION", json!(env!("CARGO_PKG_VERSION"))),
+    ] {
+        bootstrap = bootstrap.replace(key, &value.to_string().replace("</", "<\\/"));
+    }
+    let shell = ui::shell().replace(
+        "const shellNodes =",
+        &format!("{}\nconst shellNodes =", bootstrap),
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("tmp")
+        .join("browser-regressions");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("fixture.html"), shell).unwrap();
+}
+
+#[test]
+fn footnotes_cannot_claim_application_ids_and_remote_images_can_be_disabled() {
+    let renderer = Renderer::new();
+    let settings = Settings {
+        remote_images: false,
+        ..Settings::default()
+    };
+    let theme = theme::find("dark");
+    let doc=renderer.render(None,"Note[^text].\n\n[^text]: Body.\n\n![remote](https://example.invalid/image.png)\n\n<img src=\"https://example.invalid/other.png\">",&settings,&theme);
+    assert!(doc.html.contains("id=\"doc-footnote-text\""));
+    assert!(!doc.html.contains("id=\"text\""));
+    assert!(!doc.html.contains("src=\"https://"));
+}
+#[test]
+fn cleanup_preserves_unmarked_and_unknown_files() {
+    let f = Fixture::new();
+    for index in 1..=3 {
+        let dir = f.0.join(format!("previous-20260925-{}", index));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(".release-backup"), env!("CARGO_PKG_NAME")).unwrap();
+        std::fs::write(dir.join("installed.json"), "{}").unwrap();
+    }
+    let unknown = f.0.join("previous-20260925-0");
+    std::fs::create_dir(&unknown).unwrap();
+    std::fs::write(unknown.join(".release-backup"), env!("CARGO_PKG_NAME")).unwrap();
+    std::fs::write(unknown.join("my-note.md"), "keep").unwrap();
+    let unmarked = f.0.join("previous-20260924-0");
+    std::fs::create_dir(&unmarked).unwrap();
+    std::fs::write(unmarked.join("installed.json"), "keep").unwrap();
+    maintenance::cleanup(&f.0, 30, 1).unwrap();
+    assert!(unknown.join("my-note.md").exists());
+    assert!(unmarked.exists());
+    assert!(f.0.join("previous-20260925-3").exists());
+    assert!(!f.0.join("previous-20260925-1").exists());
+}
+
+#[test]
+fn settings_failure_preserves_the_last_good_file() {
+    let f = Fixture::new();
+    let settings = Settings::default();
+    settings.save(&f.0).unwrap();
+    let original = std::fs::read(f.0.join("settings.json")).unwrap();
+    std::fs::create_dir(f.0.join("settings.json.bak")).unwrap();
+    assert!(settings.save(&f.0).is_err());
+    assert_eq!(std::fs::read(f.0.join("settings.json")).unwrap(), original);
+}
+#[test]
+fn cancelled_render_does_not_return_stale_document_markup() {
+    let mut renderer = Renderer::new();
+    let token = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(2));
+    renderer.cancel_token(token, 1);
+    let rendered = renderer.render(
+        None,
+        "# Old result\n\nDiscard this.",
+        &Settings::default(),
+        &theme::find("dark"),
+    );
+    assert!(rendered.html.is_empty());
 }

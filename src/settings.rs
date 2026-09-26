@@ -2,15 +2,35 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct SessionTab {
+    pub path: String,
+    pub scroll: f32,
+    pub editing: bool,
+    pub editor_scroll: f64,
+    pub selection_start: u64,
+    pub selection_end: u64,
+}
+
 pub const RECENT_MAX: usize = 15;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
+    #[serde(skip)]
+    pub load_warning: String,
+    #[serde(skip)]
+    pub blocked_write: bool,
     pub settings_version: u32,
+    pub restore_tabs: bool,
+    pub saved_tabs: Vec<SessionTab>,
+    pub theme_favorites: Vec<String>,
+    pub log_retention_days: u32,
+    pub backup_retention: u32,
     pub workspace: String,
     pub show_hidden: bool,
     pub minimap: bool,
+    pub status_bar: bool,
     pub word_wrap: bool,
     pub tab_size: u32,
     pub close_to_tray: bool,
@@ -28,6 +48,7 @@ pub struct Settings {
     /// How the document is shown: the rendered page, or its own text.
     pub view_mode: String,
     pub syntax_colour: bool,
+    pub remote_images: bool,
     /// "auto" keeps the bar out of the way until the mouse reaches the top.
     pub chrome: String,
     /// "auto" slides the pane in when the mouse reaches the left edge,
@@ -51,10 +72,18 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            load_warning: String::new(),
+            blocked_write: false,
+            restore_tabs: true,
+            saved_tabs: Vec::new(),
+            theme_favorites: Vec::new(),
+            log_retention_days: 30,
+            backup_retention: 3,
             settings_version: 1,
             workspace: String::new(),
             show_hidden: false,
             minimap: true,
+            status_bar: true,
             word_wrap: true,
             tab_size: 4,
             close_to_tray: false,
@@ -73,6 +102,7 @@ impl Default for Settings {
             zoom: 1.0,
             view_mode: "rendered".into(),
             syntax_colour: true,
+            remote_images: true,
             chrome: "always".into(),
             // Start with discoverable controls; edge reveal remains optional.
             sidebar: "always".into(),
@@ -97,8 +127,26 @@ impl Settings {
     }
 
     pub fn load(root: &Path) -> Self {
-        let raw = std::fs::read_to_string(Self::file(root)).unwrap_or_default();
-        let mut settings: Self = serde_json::from_str(&raw).unwrap_or_default();
+        let target = Self::file(root);
+        let raw = std::fs::read_to_string(&target).unwrap_or_default();
+        let mut settings: Self = match serde_json::from_str(&raw) {
+            Ok(settings) => settings,
+            Err(_) if target.exists() => {
+                let mut recovered = std::fs::read(target.with_extension("json.bak"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+                    .unwrap_or_default();
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                let preserved = root.join(format!("settings.corrupt-{}.json", stamp));
+                recovered.blocked_write = std::fs::rename(&target, &preserved).is_err();
+                recovered.load_warning=if recovered.blocked_write {"Settings could not be read or preserved. Saving preferences is disabled until folder access is restored."}else{"Damaged settings were preserved; preferences were recovered from backup where available."}.into();
+                recovered
+            }
+            Err(_) => Self::default(),
+        };
         // Make formerly hidden controls discoverable once when upgrading.
         if !raw.contains("\"settings_version\"") {
             settings.chrome = "always".into();
@@ -109,6 +157,15 @@ impl Settings {
     }
 
     pub fn normalize(&mut self) {
+        self.window_width = self.window_width.clamp(620, 7680);
+        self.window_height = self.window_height.clamp(400, 4320);
+        self.log_retention_days = self.log_retention_days.clamp(1, 365);
+        self.backup_retention = self.backup_retention.clamp(1, 20);
+        self.saved_tabs.truncate(40);
+        self.theme_favorites
+            .retain(|id| crate::theme::builtin().iter().any(|t| t.id == *id));
+        self.theme_favorites.sort();
+        self.theme_favorites.dedup();
         self.theme = crate::theme::find(&self.theme).id;
         self.text_contrast = self.text_contrast.min(100);
         self.ui_size = self.ui_size.clamp(10, 28);
@@ -119,7 +176,7 @@ impl Settings {
         self.sidebar_width = self.sidebar_width.clamp(180, 640);
         self.tab_size = self.tab_size.clamp(1, 8);
         self.highlight_limit_kb = self.highlight_limit_kb.clamp(1, 4096);
-        self.plain_text_above_mb = self.plain_text_above_mb.clamp(1, 100);
+        self.plain_text_above_mb = self.plain_text_above_mb.clamp(1, 32);
         if !["always", "auto"].contains(&self.chrome.as_str()) {
             self.chrome = "always".into();
         }
@@ -137,10 +194,18 @@ impl Settings {
     /// Written through a temporary file so an interrupted save cannot leave a
     /// truncated settings file behind.
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
+        if self.blocked_write {
+            return Err(std::io::Error::other(
+                "Settings file could not be preserved; check folder permissions.",
+            ));
+        }
         let target = Self::file(root);
-        let tmp = target.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(self)?)?;
-        std::fs::rename(tmp, target)
+        if let Ok(previous) = std::fs::read(&target) {
+            if serde_json::from_slice::<Self>(&previous).is_ok() {
+                crate::storage::write_atomic(&target.with_extension("json.bak"), &previous)?;
+            }
+        }
+        crate::storage::write_atomic(&target, &serde_json::to_vec_pretty(self)?)
     }
 
     pub fn remember(&mut self, path: &Path) {

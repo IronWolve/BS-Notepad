@@ -29,6 +29,9 @@ pub struct Document {
 
 pub struct Renderer {
     syntaxes: SyntaxSet,
+    prepared: std::cell::RefCell<std::collections::HashMap<String, std::sync::Arc<CodeTheme>>>,
+    parsed: std::cell::RefCell<Option<(u64, std::sync::Arc<Vec<Event<'static>>>)>>,
+    cancellation: Option<(std::sync::Arc<std::sync::atomic::AtomicU64>, u64)>,
     themes: EmbeddedLazyThemeSet,
 }
 
@@ -51,6 +54,7 @@ fn anchor_for(text: &str, used: &mut Vec<String>) -> String {
     } else {
         base
     };
+    let base = format!("doc-heading-{}", base);
     let mut candidate = base.clone();
     let mut n = 2;
     while used.contains(&candidate) {
@@ -88,15 +92,50 @@ impl Renderer {
             // The extended set: 200-odd languages, so PowerShell, Dockerfile,
             // batch files and the rest colour like everything else.
             syntaxes: two_face::syntax::extra_newlines(),
+            prepared: Default::default(),
+            parsed: Default::default(),
+            cancellation: None,
             themes: two_face::theme::extra(),
         }
     }
 
-    fn code_theme(&self, theme: &Theme) -> std::borrow::Cow<'_, CodeTheme> {
+    pub fn cancel_token(
+        &mut self,
+        token: std::sync::Arc<std::sync::atomic::AtomicU64>,
+        generation: u64,
+    ) {
+        self.cancellation = Some((token, generation));
+    }
+    fn cancelled(&self) -> bool {
+        self.cancellation
+            .as_ref()
+            .is_some_and(|(token, generation)| {
+                token.load(std::sync::atomic::Ordering::Relaxed) != *generation
+            })
+    }
+    fn code_theme(&self, theme: &Theme) -> std::sync::Arc<CodeTheme> {
+        let key = format!(
+            "{}:{}:{}:{}",
+            theme.id, theme.text_contrast, theme.fg, theme.panel
+        );
+        if let Some(cached) = self.prepared.borrow().get(&key) {
+            return cached.clone();
+        }
         let base = self.themes.get(crate::theme::code_theme_name(&theme.id));
-        if theme.text_contrast == 0 && matches!(theme.id.as_str(),
-            "light" | "dark" | "dracula" | "solarized-dark" | "solarized-light" | "nord" | "gruvbox" | "monokai") {
-            return std::borrow::Cow::Borrowed(base);
+        if theme.text_contrast == 0
+            && matches!(
+                theme.id.as_str(),
+                "light"
+                    | "dark"
+                    | "dracula"
+                    | "solarized-dark"
+                    | "solarized-light"
+                    | "nord"
+                    | "gruvbox"
+                    | "monokai"
+            )
+        {
+            return std::sync::Arc::new(base.clone());
         }
         let colour = |hex: &str| syntect::highlighting::Color {
             r: u8::from_str_radix(&hex[1..3], 16).unwrap_or(0),
@@ -111,15 +150,23 @@ impl Renderer {
         for scope in &mut adjusted.scopes {
             if let Some(fg) = scope.style.foreground {
                 let hex = format!("#{:02x}{:02x}{:02x}", fg.r, fg.g, fg.b);
-                scope.style.foreground =
-                    Some(colour(&crate::theme::strengthen(
-                        &crate::theme::guard(&hex, &theme.panel, 4.5), &theme.panel, theme.text_contrast)));
+                scope.style.foreground = Some(colour(&crate::theme::strengthen(
+                    &crate::theme::guard(&hex, &theme.panel, 4.5),
+                    &theme.panel,
+                    theme.text_contrast,
+                )));
             }
             if scope.style.background.is_some() {
                 scope.style.background = Some(colour(&theme.panel));
             }
         }
-        std::borrow::Cow::Owned(adjusted)
+        let adjusted = std::sync::Arc::new(adjusted);
+        let mut cache = self.prepared.borrow_mut();
+        if cache.len() > 48 {
+            cache.clear();
+        }
+        cache.insert(key, adjusted.clone());
+        adjusted
     }
 
     /// Language for a file the tree opened directly, falling back to the file
@@ -165,13 +212,22 @@ impl Renderer {
     /// A leading `---` block is metadata, not content. Rendered as markdown it
     /// turns into a rule and a mangled heading.
     fn split_front_matter(text: &str) -> (String, &str) {
-        let Some(rest) = text.strip_prefix("---\n") else {
+        let first = text.lines().next().unwrap_or("");
+        if first != "---" {
             return (String::new(), text);
-        };
-        match rest.find("\n---\n") {
-            Some(end) => (rest[..end].to_string(), &rest[end + 5..]),
-            None => (String::new(), text),
         }
+        let start = text.find('\n').map(|i| i + 1).unwrap_or(text.len());
+        let mut offset = start;
+        for line in text[start..].split_inclusive('\n') {
+            if line.trim_end_matches(['\r', '\n']) == "---" {
+                return (
+                    text[start..offset].trim_end_matches(['\r', '\n']).into(),
+                    &text[offset + line.len()..],
+                );
+            }
+            offset += line.len();
+        }
+        (String::new(), text)
     }
 
     pub fn render(
@@ -211,9 +267,19 @@ impl Renderer {
             };
             let name = syntax.name.clone();
             return Document {
-                html: self.colour_with(text, syntax, &code_theme, settings.syntax_colour),
+                html: self.colour_with(
+                    text,
+                    syntax,
+                    &code_theme,
+                    settings.syntax_colour
+                        && text.len() <= settings.highlight_limit_kb as usize * 1024,
+                ),
                 outline: Vec::new(),
-                note: if settings.syntax_colour {
+                note: if settings.syntax_colour
+                    && text.len() > settings.highlight_limit_kb as usize * 1024
+                {
+                    "text view - highlight limit reached".into()
+                } else if settings.syntax_colour {
                     format!("text view - {}", name)
                 } else {
                     "text view - colouring off".into()
@@ -226,16 +292,42 @@ impl Renderer {
 
         // Colouring every block up front is what makes a huge document slow,
         // so past a threshold the code is shown plain and says so.
-        let code_bytes: usize = body_text
-            .split("\n```")
-            .skip(1)
-            .step_by(2)
-            .map(|chunk| chunk.len())
+        let hash = crate::storage::fingerprint(body_text.as_bytes());
+        let cached = self
+            .parsed
+            .borrow()
+            .as_ref()
+            .filter(|(key, _)| *key == hash)
+            .map(|(_, events)| events.clone());
+        let parsed = cached.unwrap_or_else(|| {
+            std::sync::Arc::new(
+                Parser::new_ext(body_text, Options::all())
+                    .map(Event::into_static)
+                    .collect::<Vec<_>>(),
+            )
+        });
+        if body_text.len() <= 4 * 1024 * 1024 {
+            *self.parsed.borrow_mut() = Some((hash, parsed.clone()));
+        }
+        let mut in_code = false;
+        let code_bytes: usize = parsed
+            .iter()
+            .filter_map(|event| match event {
+                Event::Start(Tag::CodeBlock(_)) => {
+                    in_code = true;
+                    None
+                }
+                Event::End(TagEnd::CodeBlock) => {
+                    in_code = false;
+                    None
+                }
+                Event::Text(text) if in_code => Some(text.len()),
+                _ => None,
+            })
             .sum();
         let colour =
             settings.syntax_colour && code_bytes <= settings.highlight_limit_kb as usize * 1024;
-
-        let parser = Parser::new_ext(body_text, Options::all());
+        let parser = parsed.iter().cloned();
         let mut events: Vec<Event> = Vec::new();
         let mut outline: Vec<Heading> = Vec::new();
         let mut used_anchors: Vec<String> = Vec::new();
@@ -246,7 +338,21 @@ impl Renderer {
         let mut image: Option<(String, String, String)> = None; // src, title, alt
 
         for event in parser {
+            if self.cancelled() {
+                return Document {
+                    html: String::new(),
+                    outline: Vec::new(),
+                    note: String::new(),
+                    front_matter: String::new(),
+                };
+            }
             match event {
+                Event::Start(Tag::FootnoteDefinition(name)) => events.push(Event::Start(
+                    Tag::FootnoteDefinition(format!("doc-footnote-{}", name).into()),
+                )),
+                Event::FootnoteReference(name) => events.push(Event::FootnoteReference(
+                    format!("doc-footnote-{}", name).into(),
+                )),
                 Event::Start(Tag::CodeBlock(kind)) => {
                     language = Some(match kind {
                         CodeBlockKind::Fenced(name) => name.to_string(),
@@ -288,7 +394,8 @@ impl Renderer {
                         // Relative paths are resolved here and served through
                         // the app's own scoped protocol; an HTML string has no
                         // base location of its own.
-                        let resolved = assets::url_for(&src, base);
+                        let resolved = assets::image_url(&src, base, settings.remote_images)
+                            .unwrap_or_default();
                         events.push(Event::Html(
                             format!(
                                 "<img src=\"{}\" alt=\"{}\" title=\"{}\">",
@@ -303,31 +410,20 @@ impl Renderer {
 
                 Event::Html(raw) | Event::InlineHtml(raw) => {
                     if image.is_none() {
-                        events.push(Event::Html(crate::formatting::html(&raw, base).into()));
+                        events.push(Event::Html(
+                            crate::formatting::html_with_options(
+                                &raw,
+                                base,
+                                settings.remote_images,
+                            )
+                            .into(),
+                        ));
                     }
                 }
                 Event::Start(Tag::Link {
                     dest_url, title, ..
                 }) => {
-                    let target = dest_url.to_string();
-                    let tag = if target.starts_with("http://") || target.starts_with("https://") {
-                        // Opened in the system browser, never in this window.
-                        format!(
-                            "<a href=\"{}\" data-external=\"1\" title=\"{}\">",
-                            escape(&target),
-                            escape(&title)
-                        )
-                    } else if target.starts_with('#') {
-                        format!("<a href=\"{}\">", escape(&target))
-                    } else {
-                        // Another file beside this one: opened in the app.
-                        let absolute = assets::resolve(&target, base);
-                        format!(
-                            "<a href=\"#\" data-open=\"{}\" title=\"{}\">",
-                            escape(&absolute),
-                            escape(&title)
-                        )
-                    };
+                    let tag = assets::link_html(&dest_url, &title, base);
                     events.push(Event::Html(tag.into()));
                 }
                 Event::End(TagEnd::Link) => events.push(Event::Html("</a>".into())),

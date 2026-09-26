@@ -17,18 +17,23 @@ pub fn families() -> Vec<FontFamily> {
 
     let mut seen: std::collections::BTreeMap<String, (bool, bool)> = Default::default();
     for face in db.faces() {
-        let Some((name, _)) = face.families.first() else { continue };
+        let Some((name, _)) = face.families.first() else {
+            continue;
+        };
         let lower = name.to_lowercase();
-        let nerd = lower.contains("nerd font")
-            || lower.ends_with(" nf")
-            || lower.contains("nerdfont");
+        let nerd =
+            lower.contains("nerd font") || lower.ends_with(" nf") || lower.contains("nerdfont");
         let entry = seen.entry(name.clone()).or_insert((face.monospaced, nerd));
         entry.0 |= face.monospaced;
         entry.1 |= nerd;
     }
 
     seen.into_iter()
-        .map(|(name, (monospace, nerd))| FontFamily { name, monospace, nerd })
+        .map(|(name, (monospace, nerd))| FontFamily {
+            name,
+            monospace,
+            nerd,
+        })
         .collect()
 }
 
@@ -36,12 +41,24 @@ pub fn families() -> Vec<FontFamily> {
 /// machine can be reported as missing instead of silently rendering something
 /// else.
 pub fn has_family(list: &[FontFamily], wanted: &str) -> bool {
-    let first = wanted.split(',').next().unwrap_or("").trim().trim_matches('"');
+    let first = wanted
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_matches('"');
     if first.is_empty() {
         return true;
     }
-    let generic = ["system-ui", "-apple-system", "ui-monospace", "sans-serif",
-                   "serif", "monospace", "cursive"];
+    let generic = [
+        "system-ui",
+        "-apple-system",
+        "ui-monospace",
+        "sans-serif",
+        "serif",
+        "monospace",
+        "cursive",
+    ];
     if generic.contains(&first.to_lowercase().as_str()) {
         return true;
     }
