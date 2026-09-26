@@ -492,6 +492,12 @@ article th,article td { overflow-wrap:normal; }
 <div id="choice-popup" class="popup" hidden><input id="choice-search" aria-label="Filter choices" placeholder="Filter choices…"><div id="choice-families" hidden></div><div id="choice-list" role="listbox"></div><button id="theme-favorite" hidden></button><div id="choice-hint" hidden>Hover to preview · Click to save</div></div>
 <div id="resize-edges" aria-hidden="true"><i data-direction="n"></i><i data-direction="s"></i><i data-direction="e"></i><i data-direction="w"></i><i data-direction="nw"></i><i data-direction="ne"></i><i data-direction="sw"></i><i data-direction="se"></i></div>
 <script nonce="__SCRIPT_NONCE__">
+window.startupErrors=[];
+window.postNative=payload=>{const text=JSON.stringify(payload);if(window.chrome?.webview?.postMessage)window.chrome.webview.postMessage(text);else if(window.ipc?.postMessage)window.ipc.postMessage(text);else throw Error('Native message bridge unavailable');};
+window.addEventListener('error',event=>{const message=String(event.message||'Script error')+' at '+event.lineno+':'+event.colno;if(window.startupErrors.length<20)window.startupErrors.push(message);try{window.postNative({cmd:'startupError',error:message});}catch{};});
+window.addEventListener('securitypolicyviolation',event=>{const message='Page policy blocked '+event.violatedDirective;if(window.startupErrors.length<20)window.startupErrors.push(message);try{window.postNative({cmd:'startupError',error:message});}catch{};});
+</script>
+<script nonce="__SCRIPT_NONCE__">
 const shellNodes = new Map([...document.querySelectorAll('[id]')].map(node=>[node.id,node]));
 const $ = id => id === 'text' ? shellNodes.get('editor').querySelector('textarea:not([hidden])') : shellNodes.get(id) || document.getElementById(id);
 const send = o => {
@@ -499,7 +505,7 @@ const send = o => {
  const fromTab=o.fromTab??state.activeTab,editor=fromTab===state.activeTab?$("text"):editorNodes.get(fromTab),doc=$("doc");
  const view={editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0};
  if(fromTab===state.activeTab){view.editing=state.editing;view.scroll=doc.scrollTop/(doc.scrollHeight||1);}
- window.ipc.postMessage(JSON.stringify({...o,fromTab,view}));
+ window.postNative({...o,fromTab,view});
 };
 const ICONS = {"edit": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4\"/></svg>", "preview": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "source": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>", "chevron": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\"/></svg>"};
 function setCommand(id, icon, label) { $(id).innerHTML = ICONS[icon] + '<span class="button-label">' + label + '</span>'; }
@@ -644,6 +650,7 @@ let activeGroup = "Appearance";
 
 const app = {
   init(s) {
+    state.hostReady=true;
     state.name = s.name; state.version = s.version; state.logoUrl = s.logoUrl; state.githubUrl = s.githubUrl; state.trayAvailable = s.trayAvailable;
     document.title = s.name;
     $("options-title").textContent = "Options";
@@ -1156,7 +1163,9 @@ document.addEventListener("keydown", e => {
   else if (e.key === "F3") step(e.shiftKey ? -1 : 1);
 });
 /* WORKSPACE_UI */
-send({ cmd:"ready" });
+let readyAttempts=0;
+app.requestReady=()=>{if(state.hostReady)return;try{send({cmd:"ready"});}catch(error){window.startupErrors.push(String(error));}if(++readyAttempts<20)setTimeout(app.requestReady,250);};
+app.requestReady();
 </script></body></html>"##;
 
 pub fn shell() -> String {

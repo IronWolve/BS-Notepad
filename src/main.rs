@@ -38,6 +38,14 @@ use documents::{Document, Documents};
 use render::Renderer;
 use settings::Settings;
 
+fn navigation_allowed(ready: bool, url: &str) -> bool {
+    !ready
+        || url == "about:blank"
+        || url.starts_with("about:blank#")
+        || url == "http://localhost/"
+        || url.starts_with("http://localhost/#")
+}
+
 fn welcome() -> String {
     format!("# {}\n\nYour notes, Markdown and source files in one place.\n\n- **New** starts a note (Ctrl+N).\n- **Open folder** fills the file browser.\n- **Edit** switches to the editor (Ctrl+E).\n- **Options** has themes, fonts and workspace preferences (Ctrl+,).\n\nDrag a file here to open it.\n", root::app_name())
 }
@@ -45,6 +53,7 @@ fn welcome() -> String {
 enum UserEvent {
     /// A message from the page.
     Page(String),
+    BrowserLoaded,
     Rendered {
         generation: u64,
         tab: u64,
@@ -80,6 +89,10 @@ struct App {
     root: PathBuf,
     _instance: instance::Guard,
     smoke_started: Option<Instant>,
+    ui_ready: bool,
+    boot_started: Instant,
+    boot_probe: bool,
+    navigation_ready: std::rc::Rc<std::cell::Cell<bool>>,
     settings: Settings,
     preview_theme: Option<String>,
     documents: Documents,
@@ -714,6 +727,12 @@ impl App {
         }
         match command {
             "ready" => {
+                if self.ui_ready {
+                    return;
+                }
+                self.ui_ready = true;
+                self.navigation_ready.set(true);
+                log::line("UI handshake received");
                 self.send_init();
                 self.send_recents();
                 let dir = self.tree_dir.clone();
@@ -779,6 +798,15 @@ impl App {
                 if self.smoke_started.is_some() {
                     self.run_js(include_str!("smoke.js").into());
                 }
+            }
+            "startupError" => {
+                log::line(&format!(
+                    "UI startup error: {}",
+                    value
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                ));
             }
             "smokeInspect" if self.smoke_started.is_some() => {
                 self.flush_recovery();
@@ -1291,14 +1319,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let drop_proxy = proxy.clone();
     let ipc_proxy = proxy.clone();
     let asset_worker = assets::worker_pool();
+    let navigation_ready = std::rc::Rc::new(std::cell::Cell::new(false));
+    let navigation_gate = navigation_ready.clone();
+    let page_proxy = proxy.clone();
     let builder = WebViewBuilder::new()
         .with_html(ui::shell())
         .with_hotkeys_zoom(false)
-        .with_navigation_handler(|url| {
-            url == "about:blank"
-                || url.starts_with("about:blank#")
-                || url == "http://localhost/"
-                || url.starts_with("http://localhost/#")
+        .with_navigation_handler(move |url| {
+            // Before the handshake only our supplied HTML is loading. Engine startup
+            // navigations need not expose the final about:blank URI yet.
+            let booting = !navigation_gate.get();
+            let allowed = navigation_allowed(navigation_gate.get(), &url);
+            log::line(&format!(
+                "navigation boot={} allowed={} uri={}",
+                booting,
+                allowed,
+                url.chars().take(160).collect::<String>()
+            ));
+            allowed
+        })
+        .with_on_page_load_handler(move |phase, url| {
+            let finished = matches!(phase, wry::PageLoadEvent::Finished);
+            log::line(&format!(
+                "page load {} uri={}",
+                if finished { "finished" } else { "started" },
+                url.chars().take(160).collect::<String>()
+            ));
+            if finished {
+                let _ = page_proxy.send_event(UserEvent::BrowserLoaded);
+            }
         })
         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
         .with_drag_drop_handler(move |event| {
@@ -1368,6 +1417,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut app = App {
         _instance: instance_guard,
+        ui_ready: false,
+        boot_started: Instant::now(),
+        boot_probe: false,
+        navigation_ready,
         documents: Documents::new(Document::new(None, source)),
         tray,
         tree_dir,
@@ -1401,6 +1454,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now()+std::time::Duration::from_millis(400));
+        if !app.ui_ready&&!app.boot_probe&&app.boot_started.elapsed()>std::time::Duration::from_secs(3){
+            app.boot_probe=true;
+            let _=app.webview.evaluate_script_with_callback("JSON.stringify({url:location.href,readyState:document.readyState,app:!!window.app,ipc:!!window.ipc,nativeBridge:!!window.chrome?.webview,bodyLength:document.body?.innerHTML.length,errors:window.startupErrors||[]})",|result|log::line(&format!("startup diagnostic: {}",result)));
+            app.run_js("window.app?.requestReady?.();".into());
+        }
         if app.window.is_focused(){app.check_disk();}
         if app.recovery_flush.elapsed()>std::time::Duration::from_millis(700){app.flush_recovery();}
         match event {
@@ -1421,6 +1479,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if app.id==tab{app.run_js(format!("window.app.diskStatus({});",app.external_changed));}}
             Event::UserEvent(UserEvent::RecoveryError(error))=>app.notify(&format!("Draft recovery could not be saved: {}",error)),
             Event::WindowEvent{event:WindowEvent::Focused(true),..}=>app.check_disk(),
+            Event::UserEvent(UserEvent::BrowserLoaded)=>{app.run_js("window.app?.requestReady?.();".into());}
             Event::UserEvent(UserEvent::Page(message)) => app.handle(&message, control_flow),
             Event::UserEvent(UserEvent::Dropped(path)) => app.open(path, true),
             Event::UserEvent(UserEvent::Handoff(paths)) => {

@@ -580,3 +580,12 @@ fn cancelled_render_does_not_return_stale_document_markup() {
     );
     assert!(rendered.html.is_empty());
 }
+
+#[test]
+fn trusted_startup_navigation_is_not_blocked_before_the_handshake() {
+    assert!(navigation_allowed(false, ""));
+    assert!(navigation_allowed(false, "about:blank"));
+    assert!(navigation_allowed(true, "about:blank#doc-heading-text"));
+    assert!(!navigation_allowed(true, "https://example.invalid/"));
+    assert!(!navigation_allowed(true, "file:///unexpected.html"));
+}
