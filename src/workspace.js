@@ -1,3 +1,4 @@
+const shortcutLabel=text=>state.platform==='macos'?text.replaceAll('Ctrl+H','⌘⌥F').replaceAll('Ctrl+','⌘'):text;
 // Documents keep their own editor nodes so switching tabs preserves native undo.
 const editorNodes = new Map(), pendingViews = new Map();
 let mapTimer, mapFrame, mapHeight = 0, helpFocus, selectedHelp = 'start';
@@ -200,7 +201,7 @@ function showMenu(anchor,items,point) {
     const icon=document.createElement('span');icon.className='menu-symbol';icon.setAttribute('aria-hidden','true');
     if(item.brand&&state.logoUrl){const image=document.createElement('img');image.src=state.logoUrl;image.alt='';icon.appendChild(image);}else icon.innerHTML=menuIcon(item.icon);
     const label=document.createElement('span');label.className='menu-label';label.textContent=item.label;
-    const hint=document.createElement('span');hint.className='menu-hint';hint.textContent=item.hint||'';
+    const hint=document.createElement('span');hint.className='menu-hint';hint.textContent=shortcutLabel(item.hint||'');
     button.append(icon,label,hint);
     if(typeof item.checked==='boolean'){button.setAttribute('role','menuitemcheckbox');button.setAttribute('aria-checked',String(item.checked));const check=document.createElement('span');check.className='menu-check';check.setAttribute('aria-hidden','true');if(item.checked)check.innerHTML=menuIcon('check');button.appendChild(check);}
     button.onclick=()=>{closeMenu();item.action();};menu.appendChild(button);
@@ -356,9 +357,9 @@ app.drawHelp=()=>{
   for(const page of HELP){const b=document.createElement('button');b.textContent=page.title;b.classList.toggle('on',page.id===selectedHelp&&!query);b.onclick=()=>{selectedHelp=page.id;$('help-search').value='';app.drawHelp();};$('help-nav').appendChild(b);}
   const pages=query?HELP.filter(p=>(p.title+' '+(p.paragraphs||[]).join(' ')+' '+JSON.stringify(p.shortcuts||[])).toLowerCase().includes(query)):HELP.filter(p=>p.id===selectedHelp);
   for(const page of pages){const heading=document.createElement('h3');heading.textContent=page.title;$('help-content').appendChild(heading);
-    for(const text of page.paragraphs||[]){const p=document.createElement('p');p.textContent=text;$('help-content').appendChild(p);}
+    for(const text of page.paragraphs||[]){const p=document.createElement('p');p.textContent=shortcutLabel(text);$('help-content').appendChild(p);}
     const shortcuts=document.createElement('div');shortcuts.className='shortcut-grid';
-    for(const [label,key] of page.shortcuts||[]){const row=document.createElement('div');row.className='shortcut';const name=document.createElement('span');name.textContent=label;const kbd=document.createElement('kbd');kbd.textContent=key;row.append(name,kbd);shortcuts.appendChild(row);}if(shortcuts.children.length)$('help-content').appendChild(shortcuts);}
+    for(const [label,key] of page.shortcuts||[]){const row=document.createElement('div');row.className='shortcut';const name=document.createElement('span');name.textContent=label;const kbd=document.createElement('kbd');kbd.textContent=shortcutLabel(key);row.append(name,kbd);shortcuts.appendChild(row);}if(shortcuts.children.length)$('help-content').appendChild(shortcuts);}
   if(!pages.length)$('help-content').textContent='No matching help topics.';
   $('help-content').scrollTop=0;app.scheduleDialogFit?.();
 };

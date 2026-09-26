@@ -650,7 +650,8 @@ let activeGroup = "Appearance";
 
 const app = {
   init(s) {
-    state.hostReady=true;
+    state.hostReady=true;state.platform=s.platform||"";
+    if(state.platform==="macos")for(const node of document.querySelectorAll("[title]"))node.title=shortcutLabel(node.title);
     state.name = s.name; state.version = s.version; state.logoUrl = s.logoUrl; state.githubUrl = s.githubUrl; state.trayAvailable = s.trayAvailable;
     document.title = s.name;
     $("options-title").textContent = "Options";
@@ -1153,7 +1154,7 @@ document.addEventListener("keydown", e => {
   else if (ctrl && e.key.toLowerCase() === "e") { e.preventDefault(); $("b-edit").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "b") { e.preventDefault(); $("b-side").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "g") { e.preventDefault(); app.goToLine(); }
-  else if (ctrl && e.key.toLowerCase() === "h") { e.preventDefault(); app.showFind(true); $("replace-row").hidden=false; $("find-replace").setAttribute("aria-expanded","true"); $("replace-text").focus(); }
+  else if ((state.platform === "macos" ? e.metaKey && e.altKey && e.key.toLowerCase() === "f" : ctrl && e.key.toLowerCase() === "h")) { e.preventDefault(); app.showFind(true); $("replace-row").hidden=false; $("find-replace").setAttribute("aria-expanded","true"); $("replace-text").focus(); }
   else if (ctrl && e.key.toLowerCase() === "f") { e.preventDefault(); $("b-find").onclick(); }
   else if (ctrl && e.key.toLowerCase() === "u") { e.preventDefault(); $("b-view").onclick(); }
   else if (ctrl && !e.altKey && (e.key === "=" || e.key === "+" || e.code === "NumpadAdd")) { e.preventDefault(); $("b-zoomin").onclick(); }

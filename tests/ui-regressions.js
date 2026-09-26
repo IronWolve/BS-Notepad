@@ -26,6 +26,8 @@
  app.finishDocument({tab:id,revision,generation:10,html:'<p>Current render</p>',renderKey:'current',outline:[]});check($('article').textContent==='Current render','Current background render is delivered');
  app.beginDocument({tab:id,revision,generation:11,themeId:state.previewTheme||state.settings.theme,path:state.path,editing:false,dirty:false,readOnly:true});check(editor.readOnly&&$('b-edit').disabled&&$('replace-all').disabled,'Large-file preview cannot be edited or replaced');
  app.settingsStatus({ok:false,message:'Preferences not saved: disk full'});check($('pnote').textContent.includes('disk full'),'Preference write failures are visible');
+ const oldPlatform=state.platform;state.platform='macos';check(shortcutLabel('Ctrl+H')==='⌘⌥F'&&shortcutLabel('Ctrl+S')==='⌘S','Mac shortcut labels use Command and preserve Hide');
+ const hideEvent=new KeyboardEvent('keydown',{key:'h',metaKey:true,bubbles:true,cancelable:true});document.dispatchEvent(hideEvent);check(!hideEvent.defaultPrevented,'Command-H remains available to the native Hide menu');state.platform=oldPlatform;
  const savedIpc=window.ipc,oldNative=window.chrome?.webview;window.chrome=window.chrome||{};let nativeMessage;
  window.chrome.webview={postMessage:text=>nativeMessage=JSON.parse(text)};delete window.ipc;window.postNative({cmd:'bridge-probe'});
  check(nativeMessage?.cmd==='bridge-probe','Windows native bridge works without the injected wrapper');window.ipc=savedIpc;if(oldNative)window.chrome.webview=oldNative;else delete window.chrome.webview;

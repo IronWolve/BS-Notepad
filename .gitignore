@@ -47,3 +47,9 @@
 !/tests/ui-fixture.js
 !/tests/ui-regressions.js
 !/scripts/check-ui.sh
+
+!/src/mac_menu.rs
+!/scripts/build-macos.sh
+!/tools/
+/tools/*
+!/tools/export-icon.rs

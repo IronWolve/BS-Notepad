@@ -8,6 +8,9 @@ VER=$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO/Cargo.toml" | head -1)
 WIN_DEST=${WINDOWS_DEST:-/mnt/c/work/$BIN}
 TARGET=${1:-all}
 INSTALL=${2:-}
+if [ "$TARGET" = macos ] || { [ "$TARGET" = all ] && [ "$(uname -s)" = Darwin ]; }; then
+  exec "$REPO/scripts/build-macos.sh" "${@:2}"
+fi
 case "$TARGET" in all|linux|windows) ;; *) echo "Usage: $0 [all|linux|windows] [--install]"; exit 2;; esac
 [ -z "$INSTALL" ] || [ "$INSTALL" = --install ] || { echo "Unknown option: $INSTALL"; exit 2; }
 export CARGO_TARGET_DIR="$ROOT/tmp/target"

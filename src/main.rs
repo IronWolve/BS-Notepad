@@ -10,6 +10,8 @@ mod icon;
 mod instance;
 mod jobs;
 mod log;
+#[cfg(target_os = "macos")]
+mod mac_menu;
 mod maintenance;
 mod recovery;
 mod render;
@@ -53,6 +55,8 @@ fn welcome() -> String {
 enum UserEvent {
     /// A message from the page.
     Page(String),
+    #[cfg(target_os = "macos")]
+    MacCommand(String),
     BrowserLoaded,
     Rendered {
         generation: u64,
@@ -87,6 +91,8 @@ enum UserEvent {
 
 struct App {
     root: PathBuf,
+    #[cfg(target_os = "macos")]
+    _menu: muda::Menu,
     _instance: instance::Guard,
     smoke_started: Option<Instant>,
     ui_ready: bool,
@@ -209,6 +215,7 @@ impl App {
 
         let payload = json!({
             "name": root::app_name(),
+            "platform":std::env::consts::OS,
             "logoUrl": assets::brand_url(),
             "maximized": self.window.is_maximized(),
             "githubUrl": env!("CARGO_PKG_HOMEPAGE"),
@@ -1234,11 +1241,13 @@ impl App {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     let root = root::app_root();
+    std::fs::create_dir_all(&root)?;
     log::init(&root);
     log::line(&format!("start root={}", root.display()));
 
     let arguments: Vec<PathBuf> = std::env::args()
         .skip(1)
+        .filter(|arg| !(cfg!(target_os = "macos") && arg.starts_with("-psn_")))
         .take(128)
         .map(PathBuf::from)
         .map(|p| p.canonicalize().unwrap_or(p))
@@ -1314,6 +1323,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
+    #[cfg(target_os = "macos")]
+    let menu = mac_menu::create(proxy.clone())?;
     let tray = tray::SystemTray::new(proxy.clone());
 
     let drop_proxy = proxy.clone();
@@ -1417,6 +1428,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut app = App {
         _instance: instance_guard,
+        #[cfg(target_os = "macos")]
+        _menu: menu,
         ui_ready: false,
         boot_started: Instant::now(),
         boot_probe: false,
@@ -1479,6 +1492,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if app.id==tab{app.run_js(format!("window.app.diskStatus({});",app.external_changed));}}
             Event::UserEvent(UserEvent::RecoveryError(error))=>app.notify(&format!("Draft recovery could not be saved: {}",error)),
             Event::WindowEvent{event:WindowEvent::Focused(true),..}=>app.check_disk(),
+            #[cfg(target_os="macos")]
+            Event::Opened{urls}=>{app.show();app.startup_target=None;for url in urls{if let Ok(path)=url.to_file_path(){if app.ui_ready{app.open(path,true);}else{app.startup_paths.push(path);app.startup_pending=app.startup_paths.len();}}}}
+            #[cfg(target_os="macos")]
+            Event::UserEvent(UserEvent::MacCommand(command))=>{
+                app.show();match command.as_str(){
+                    "quit"=>app.quit(control_flow),
+                    "help"=>app.run_js("window.app?.help(true);".into()),
+                    "replace"=>app.run_js("window.app?.showFind(true);if(document.getElementById('replace-row').hidden)document.getElementById('find-replace').click();".into()),
+                    "options"=>app.run_js("window.app?.options(true);".into()),
+                    "close"=>app.handle(&json!({"cmd":"closeTab","id":app.id}).to_string(),control_flow),
+                    action=>{let button=match action{"new"=>"b-new","open"=>"b-open","folder"=>"folder-open","save"=>"b-save","saveAs"=>"b-saveas","find"=>"b-find",_=>""};if !button.is_empty(){app.run_js(format!("document.getElementById({}).click();",json!(button)));}}
+                }
+            }
             Event::UserEvent(UserEvent::BrowserLoaded)=>{app.run_js("window.app?.requestReady?.();".into());}
             Event::UserEvent(UserEvent::Page(message)) => app.handle(&message, control_flow),
             Event::UserEvent(UserEvent::Dropped(path)) => app.open(path, true),

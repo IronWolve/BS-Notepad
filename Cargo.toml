@@ -1,6 +1,6 @@
 [package]
 name = "bs-notepad"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 rust-version = "1.95"
 homepage = "https://github.com/IronWolve"
@@ -27,6 +27,9 @@ strip = true
 [target.'cfg(target_os = "windows")'.dependencies]
 tray-icon = { version = "0.21.3", default-features = false }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = { version = "=0.17.2", default-features = false }
 
 [package.metadata.app]
 display-name = "BS Notepad"
