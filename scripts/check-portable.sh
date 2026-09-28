@@ -30,7 +30,7 @@ if [ ! -x "$BIN" ]; then bad "rename smoke test" "no release build at tmp/target
   WORK="$ROOT/tmp/rename-check/$(date +%s)-moved notes"
   mkdir -p "$WORK"
   cp "$BIN" "$WORK/"
-  printf '%s\r\n' '# Text' '' '# Renamed' '' 'Running from a differently named directory.' '' '<span style="color:#22c55e">rendering-smoke</span>' '' '## **Formatted** heading' > "$WORK/doc.md"
+  printf '%s\r\n' '# Text' '' '# Renamed' '' 'Running from a differently named directory.' '' '<span style="color:#22c55e">rendering-smoke</span>' '' '## **Formatted** heading' '' '![Embedded picture](image-smoke.png)' > "$WORK/doc.md"
   cp "$WORK/doc.md" "$WORK/doc.expected"
   cp "$ROOT/repo/assets/brand.png" "$WORK/image-smoke.png"
   # DISPLAY alone is not enough: with WAYLAND_DISPLAY set, GTK ignores the

@@ -57,3 +57,4 @@
 !/src/image_viewer.js
 !/tests/image-regressions.js
 !/scripts/build-env.sh
+!/tests/markdown-image-regressions.js

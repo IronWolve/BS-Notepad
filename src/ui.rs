@@ -401,6 +401,11 @@ article th,article td { overflow-wrap:normal; }
 #image-viewport::-webkit-scrollbar { width:6px; height:6px; }
 #image-viewport::-webkit-scrollbar-track { background:transparent; }
 #image-viewport::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 24%,transparent); border-radius:6px; }
+#content-main { position:relative; min-height:0; }
+#image-viewer.embedded-preview { position:absolute; inset:0; z-index:6; }
+#image-tools #image-back { width:auto; margin-right:auto; gap:6px; padding:5px 8px; white-space:nowrap; }
+#article img[data-zoomable] { cursor:zoom-in; }
+@media(max-width:800px) { #image-back span { display:none; } }
 </style></head><body>
 
 <div id="hot"></div>
@@ -484,6 +489,7 @@ article th,article td { overflow-wrap:normal; }
     <div id="doc"><article id="article"></article></div>
     <section id="image-viewer" aria-label="Image viewer" hidden>
       <div id="image-tools" role="toolbar" aria-label="Image controls">
+        <button id="image-back" hidden aria-label="Back to document" title="Back to document (Esc)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back to document</span></button>
         <button id="image-minus" aria-label="Zoom out" title="Zoom out (Ctrl+Minus)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
         <output id="image-percent" aria-label="Image zoom">—</output>
         <button id="image-plus" aria-label="Zoom in" title="Zoom in (Ctrl+Plus)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
@@ -535,7 +541,7 @@ const send = o => {
  if(o.cmd === "quit" || o.cmd === "closeWindow") app.flushZoom?.();
  const fromTab=o.fromTab??state.activeTab,editor=fromTab===state.activeTab?$("text"):editorNodes.get(fromTab),doc=$("doc");
  const view={editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0};
- if(fromTab===state.activeTab){view.editing=state.editing;view.scroll=doc.scrollTop/(doc.scrollHeight||1);}
+ if(fromTab===state.activeTab){view.editing=state.editing;view.scroll=state.embeddedImage?.tab===fromTab?state.embeddedImage.fraction:doc.scrollTop/(doc.scrollHeight||1);}
  window.postNative({...o,fromTab,view});
 };
 const ICONS = {"edit": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4\"/></svg>", "preview": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "source": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>", "chevron": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\"/></svg>"};
@@ -894,15 +900,15 @@ const app = {
     }
   },
   toggleEdit(on, notify = true) {
-    if(on && state.readOnly){if(notify)app.note(state.image?"Images are view-only.":"This large file is a read-only preview.");on=false;}
+    if(on && (state.readOnly||state.image)){if(notify)app.note(state.image?"Images are view-only.":"This large file is a read-only preview.");on=false;}
     state.editing = on;
     $("editor").classList.toggle("show", on);
-    $("doc").style.display = on || state.image ? "none" : "";
+    $("doc").style.display = on || state.image && !state.embeddedImage ? "none" : "";
     $("b-edit").classList.toggle("on", on);
     $("b-edit").setAttribute("aria-label",on ? "Read document" : "Edit document");
     $("b-edit").setAttribute("aria-pressed",String(on));
     setCommand("b-edit",on ? "preview" : "edit",on ? "Preview" : "Edit");
-    $("fm").hidden = on || !!state.image;
+    $("fm").hidden = on || !!state.image && !state.embeddedImage;
     if (on && notify) $("text").focus();
     app.updateStatus?.();
     if (notify) send({cmd:"viewState"});
@@ -1159,6 +1165,7 @@ for (const b of document.querySelectorAll("#tabs button[data-pane]"))
   b.onclick = () => send({ cmd:"setting", key:"sidebar_tab", value:b.dataset.pane });
 
 $("doc").onscroll = () => {
+  if(state.embeddedImage)return;
   const h = $("doc").scrollHeight || 1;
   send({ cmd:"scroll", value:$("doc").scrollTop / h });
 };

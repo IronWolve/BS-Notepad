@@ -46,7 +46,7 @@ function focusMark(navigate=true) {
 function step(delta) {if(!searchHits.length)return;at=(at+delta+searchHits.length)%searchHits.length;focusMark();}
 app.refreshFind=()=>{if($('find').classList.contains('show'))runFind($('find-text').value,false);};
 app.replaceFound=all=>{
-  const query=$('find-text').value;if(!query||state.readOnly)return;
+  const query=$('find-text').value;if(!query||state.readOnly||state.image)return;
   const editor=$('text'),hits=matchesIn(editor.value,query);if(!hits.length)return;
   const replacement=$('replace-text').value;
   let start,end,value;
@@ -67,7 +67,7 @@ app.updateStatus=()=>{
  $('cursor-status').textContent=state.editing?'Ln '+line+', Col '+column:'Read mode';
  $('format-status').textContent=(state.encoding||'UTF-8')+' · '+(state.lineEnding||'LF')+(state.readOnly?' · Read-only preview':'');
 };
-app.goToLine=()=>{if(state.readOnly){app.note('Line navigation is available for editable text documents.');return;}app.toggleEdit(true);$('line-number').max=$('text').value.split('\n').length;$('line-number').value=1;$('line-dialog').showModal();$('line-number').select();};
+app.goToLine=()=>{if(state.readOnly||state.image){app.note('Line navigation is available for editable text documents.');return;}app.toggleEdit(true);$('line-number').max=$('text').value.split('\n').length;$('line-number').value=1;$('line-dialog').showModal();$('line-number').select();};
 $('line-form').onsubmit=e=>{e.preventDefault();const line=Math.max(1,Math.min(Number($('line-number').value)||1,Number($('line-number').max)));let pos=0;for(let i=1;i<line;i++)pos=$('text').value.indexOf('\n',pos)+1;$('line-dialog').close();const editor=$('text');editor.focus();editor.setSelectionRange(pos,pos);editor.scrollTop=(line-1)*parseFloat(getComputedStyle(editor).lineHeight)-editor.clientHeight/2;app.updateStatus();};
 $('line-cancel').onclick=()=>$('line-dialog').close();$('cursor-status').onclick=()=>app.goToLine();
 document.addEventListener('selectionchange',()=>{if(document.activeElement===$('text'))app.updateStatus();});

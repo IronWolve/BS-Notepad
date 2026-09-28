@@ -133,11 +133,12 @@ app.documentAnchor=id=>[...$('article').querySelectorAll('[id]')].find(node=>nod
 app.resendEditor=id=>{const node=editorNodes.get(id);if(node)send({cmd:'edit',fromTab:id,text:node.value,revision:Number(node.dataset.revision)});};
 app.beginDocument=payload=>{
   if(payload.tab===state.activeTab&&payload.revision<Number(editorNodes.get(payload.tab)?.dataset.revision||0))return;
+  const keepImage=app.keepEmbeddedImage?.(payload);if(!keepImage)app.closeEmbeddedImage?.(false);
   state.pendingDocument=payload;state.renderPending=true;
   const changed=state.activeTab!==payload.tab||!editorNodes.has(payload.tab);
   editorFor(payload.tab);if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();}
   state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
-  app.setImage?.(payload.image,payload.tab);
+  if(!keepImage)app.setImage?.(payload.image,payload.tab);else app.syncImageControls();
   app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();
 };
 app.finishDocument=payload=>{
@@ -149,17 +150,19 @@ app.diskStatus=changed=>{$('disk-change').hidden=!changed;};
 const baseDocument=app.setDocument;
 app.setDocument = payload => {
   if(payload.themeId && payload.themeId !== (state.previewTheme || state.settings.theme)) return;
+  const keepImage=app.keepEmbeddedImage?.(payload);if(!keepImage)app.closeEmbeddedImage?.(false);
   const id=payload.tab ?? state.activeTab ?? 1;
   const changed=state.activeTab!==id || !editorNodes.has(id);
   editorFor(id);
   if(changed)pendingViews.set(id,payload);
   state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;$("text").readOnly=state.readOnly;
-  app.setImage?.(payload.image,id);
+  if(!keepImage)app.setImage?.(payload.image,id);else app.syncImageControls();
   baseDocument(payload);state.renderRevision=payload.revision??0;
   for(const table of $('article').querySelectorAll('table')) {
     if(table.parentElement.classList.contains('table-scroll'))continue;
     const wrap=document.createElement('div');wrap.className='table-scroll';table.before(wrap);wrap.appendChild(table);
   }
+  app.wireEmbeddedImages?.();
   for(const image of $('article').querySelectorAll('img')) image.addEventListener('load',()=>app.scheduleReaderLayout(),{once:true});
   app.toggleEdit(payload.editing ?? state.editing,false);
   app.updateStatus?.();
@@ -342,7 +345,7 @@ const HELP = [
   'The main menu can clear recent files or clean old app logs and marked release backups. Retention limits are in Options → Workspace. Unmarked folders and unrelated files are preserved. Options → Document also controls remote images.'
  ]},
  {id:'images',title:'Images',paragraphs:[
-  'Open a picture from Explorer, Open File or drag and drop. PNG, JPEG, GIF, WebP, BMP, ICO, SVG and AVIF files open inside the document area as view-only tabs. Files are limited to 32 MB; formats supported by the system browser are displayed.',
+  'Click a picture inside a Markdown document to inspect it with the same zoom and magnifier controls. Back to document or Escape returns to your reading position. Ctrl+click a linked picture to follow its link. Open a picture from Explorer, Open File or drag and drop. PNG, JPEG, GIF, WebP, BMP, ICO, SVG and AVIF files open inside the document area as view-only tabs. Files are limited to 32 MB; formats supported by the system browser are displayed.',
   'The image starts fitted to the window. Use the plus and minus buttons or Ctrl+wheel to zoom. The fit button shows the whole image; 1:1 or Ctrl+0 shows actual pixels. Drag a zoomed image to pan, or use the canvas scrollbars.',
   'Enable the magnifying-glass button, then move over the picture to inspect details. Move away to hide the lens. With the canvas focused, F fits the picture and M toggles the magnifier. Image zoom is separate from your text zoom setting.'
  ]},
@@ -391,12 +394,12 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:'New note',icon:'note',hint:'Ctrl+N',action:()=>$('b-new').click()},
  {label:'Browse for a file…',icon:'open',hint:'Ctrl+O',action:()=>$('b-open').click()},
  {label:'Choose a workspace folder…',icon:'workspace',action:()=>$('folder-open').click()},null,
- {label:'Save edits',icon:'save',disabled:!!state.readOnly,hint:'Ctrl+S',action:()=>$('b-save').click()},
- {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
+ {label:'Save edits',icon:'save',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+S',action:()=>$('b-save').click()},
+ {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
  {label:'Read again from disk',icon:'reload',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
  {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},
  {label:'Reopen closed tab',icon:'newTab',hint:'Ctrl+Shift+T',action:()=>send({cmd:'reopenTab'})},null,
- {label:state.editing?'Read document':'Edit document',disabled:!!state.readOnly,icon:state.editing?'read':'edit',hint:'Ctrl+E',action:()=>$('b-edit').click()},
+ {label:state.editing?'Read document':'Edit document',disabled:!!state.readOnly||!!state.image,icon:state.editing?'read':'edit',hint:'Ctrl+E',action:()=>$('b-edit').click()},
  {label:state.settings.view_mode==='source'?'Rendered view':'Source view',disabled:!!state.image,icon:state.settings.view_mode==='source'?'rendered':'source',hint:'Ctrl+U',action:()=>$('b-view').click()},
  {label:'Document map',icon:'map',disabled:!!state.image,checked:!!state.settings.minimap,action:()=>$('b-map').click()},
  {label:'Wrap long lines',icon:'wrap',checked:!!state.settings.word_wrap,action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},

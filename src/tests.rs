@@ -489,7 +489,7 @@ fn audit_instance_lock_and_acknowledgment() {
 }
 #[test]
 fn export_browser_fixture() {
-    let source = "# Text\n\nHello **beautiful** world.\n\n```text\npayload\n```\n";
+    let source = "# Text\n\nHello **beautiful** world.\n\n```text\npayload\n```\n\n![Embedded picture](data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)\n";
     let settings = Settings::default();
     let rendered = Renderer::new().render(
         Some(Path::new("audit.md")),

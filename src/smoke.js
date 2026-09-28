@@ -14,12 +14,14 @@
   send({cmd:'save'});check((await inspect('missing-text')).disk===source,'missing save text is refused');
   app.toggleEdit(true);$('text').value=source+'\nSaved edit 😀\n';$('text').dispatchEvent(new Event('input'));$('b-save').click();
   check((await inspect('edited-save')).disk===source+'\nSaved edit 😀\n','modified text saves correctly');
-  $('text').value=source;$('text').dispatchEvent(new Event('input'));$('b-save').click();await inspect('restored-save');app.toggleEdit(false);send({cmd:'preview'});await until(()=>!state.renderPending,'restored rendering');
+  $('text').value=source;$('text').dispatchEvent(new Event('input'));$('b-save').click();await inspect('restored-save');app.toggleEdit(false);send({cmd:'preview'});await inspect('preview-issued');await until(()=>!state.renderPending,'restored rendering');
   if(source.includes('rendering-smoke')) {
     const span=[...$('article').querySelectorAll('span')].find(node=>node.textContent==='rendering-smoke');
     check(!!span&&getComputedStyle(span).color==='rgb(34, 197, 94)','embedded HTML color');
     check($('article').querySelector('h2 strong')?.textContent==='Formatted','heading formatting');
   }
+  const embedded=$('article').querySelector('img[data-zoomable]');
+  if(embedded){await until(()=>embedded.complete&&embedded.naturalWidth>0,'Markdown image decode');embedded.click();await until(()=>!!state.embeddedImage&&!!imageContext?.loaded,'Markdown image zoom');$('image-plus').click();$('image-magnify').click();check(imageContext.loupe,'Markdown image magnifier');$('image-back').click();check(!state.image&&$('text').value===source,'return from Markdown picture');}
   $('tab-new').click();
   await until(()=>state.tabs.length===2&&state.activeTab!==original,'new tab');
   const draftId=state.activeTab;

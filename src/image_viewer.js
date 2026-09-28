@@ -1,7 +1,7 @@
 // Images stay in the document workspace. Only their view state is kept between tabs.
 const imageViews=new Map();let imageContext=null,imagePan=null;
 const imageBytes=bytes=>bytes>=1048576?(bytes/1048576).toFixed(1)+' MB':bytes>=1024?Math.round(bytes/1024)+' KB':bytes+' B';
-function rememberImage(){if(imageContext)imageViews.set(imageContext.tab,{scale:imageContext.scale,fit:imageContext.fit,loupe:imageContext.loupe,left:$('image-viewport').scrollLeft,top:$('image-viewport').scrollTop});}
+function rememberImage(){if(imageContext&&!imageContext.info.embedded)imageViews.set(imageContext.tab,{scale:imageContext.scale,fit:imageContext.fit,loupe:imageContext.loupe,left:$('image-viewport').scrollLeft,top:$('image-viewport').scrollTop});}
 function hideLens(){$('image-lens').hidden=true;}
 app.pruneImages=live=>{for(const id of imageViews.keys())if(!live.has(id))imageViews.delete(id);if(imageContext&&!live.has(imageContext.tab)){imageContext=null;hideLens();}};
 app.imageStatus=()=>{
@@ -9,7 +9,7 @@ app.imageStatus=()=>{
  $('document-status').hidden=!state.settings.status_bar;
  $('cursor-status').textContent=ctx.loaded?ctx.width.toLocaleString()+' × '+ctx.height.toLocaleString():'Image';
  $('cursor-status').disabled=true;$('cursor-status').title='Image dimensions';
- $('format-status').textContent=ctx.info.format+' · '+imageBytes(ctx.info.bytes)+' · View only';
+ $('format-status').textContent=[ctx.info.format||'Image',Number.isFinite(ctx.info.bytes)?imageBytes(ctx.info.bytes):null,ctx.info.embedded?'In document':'View only'].filter(Boolean).join(' · ');
  $('image-percent').textContent=ctx.loaded?Math.round(ctx.scale*100)+'%':'—';
  for(const id of ['image-minus','image-plus','image-fit','image-actual','image-magnify'])$(id).disabled=!ctx.loaded;
  $('image-fit').setAttribute('aria-pressed',String(ctx.fit));$('image-magnify').setAttribute('aria-pressed',String(ctx.loupe));
@@ -17,8 +17,8 @@ app.imageStatus=()=>{
 app.syncImageControls=()=>{
  const image=!!state.image;
  for(const id of ['b-view','b-find','b-map'])$(id).disabled=image;
- $('b-edit').disabled=!!state.readOnly;$('b-save').disabled=$('b-saveas').disabled=!!state.readOnly;
- $('replace-one').disabled=$('replace-all').disabled=!!state.readOnly;
+ $('b-edit').disabled=image||!!state.readOnly;$('b-save').disabled=$('b-saveas').disabled=image||!!state.readOnly;
+ $('replace-one').disabled=$('replace-all').disabled=image||!!state.readOnly;
  $('minimap').hidden=image||!state.settings.minimap;
  $('cursor-status').disabled=image;
  if(!image)$('cursor-status').title='Go to line ('+shortcutLabel('Ctrl+G')+')';
@@ -48,13 +48,13 @@ function showLens(event){
 }
 app.toggleMagnifier=()=>{if(!imageContext?.loaded)return;imageContext.loupe=!imageContext.loupe;hideLens();app.imageStatus();rememberImage();};
 app.setImage=(info,tab)=>{
- state.image=info||null;$('image-viewer').hidden=!info;app.syncImageControls();
+ state.image=info||null;$('image-viewer').hidden=!info;$('image-back').hidden=!info?.embedded;$('image-viewer').classList.toggle('embedded-preview',!!info?.embedded);app.syncImageControls();
  if(info&&imageContext?.tab===tab&&imageContext.info.url===info.url)return;
  rememberImage();hideLens();$('image-lens').style.backgroundImage='none';$('image-board').replaceChildren();imageContext=null;imagePan=null;
  if(!info)return;
- app.showFind(false);const saved=imageViews.get(tab),node=new Image(),paper=document.createElement('div');paper.className='image-paper';paper.appendChild(node);$('image-board').appendChild(paper);
+ app.showFind(false);const saved=info.embedded?null:imageViews.get(tab),node=new Image(),paper=document.createElement('div');paper.className='image-paper';paper.appendChild(node);$('image-board').appendChild(paper);
  const ctx={tab,info,node,width:0,height:0,scale:saved?.scale||1,fit:saved?.fit??true,loupe:saved?.loupe??false,loaded:false};imageContext=ctx;
- node.alt=state.tabs?.find(t=>t.id===tab)?.name||'Open image';node.draggable=false;node.decoding='async';paper.hidden=true;
+ node.alt=info.alt||state.tabs?.find(t=>t.id===tab)?.name||'Open image';node.draggable=false;node.decoding='async';paper.hidden=true;
  $('image-message').hidden=false;$('image-message').textContent='Loading image…';app.imageStatus();
  node.onload=()=>{if(imageContext!==ctx)return;ctx.width=node.naturalWidth;ctx.height=node.naturalHeight;if(!ctx.width||!ctx.height){node.onerror();return;}ctx.loaded=true;paper.hidden=false;$('image-message').hidden=true;app.imageLayout();if(saved&&!ctx.fit){$('image-viewport').scrollLeft=saved.left;$('image-viewport').scrollTop=saved.top;}};
  node.onerror=()=>{if(imageContext!==ctx)return;ctx.loaded=false;paper.hidden=true;$('image-message').textContent='This image could not be displayed. It may be damaged or unsupported by this system.';$('image-message').hidden=false;app.imageStatus();};
@@ -69,3 +69,38 @@ $('image-viewport').onpointerdown=e=>{const vp=$('image-viewport');if(e.button!=
 $('image-viewport').onpointermove=e=>{if(imagePan){$('image-viewport').scrollLeft=imagePan.left-(e.clientX-imagePan.x);$('image-viewport').scrollTop=imagePan.top-(e.clientY-imagePan.y);}};
 $('image-viewport').onpointerup=$('image-viewport').onpointercancel=e=>{imagePan=null;$('image-viewport').classList.remove('panning');if($('image-viewport').hasPointerCapture(e.pointerId))$('image-viewport').releasePointerCapture(e.pointerId);};
 new ResizeObserver(()=>{if(state.image)app.imageLayout();}).observe($('image-viewport'));
+
+app.keepEmbeddedImage=payload=>!!state.embeddedImage&&state.embeddedImage.tab===(payload.tab??state.activeTab)&&state.embeddedImage.revision===(payload.revision??0)&&!payload.image&&!payload.editing;
+app.openEmbeddedImage=image=>{
+ if(state.editing||state.image||!image.getAttribute('src'))return;
+ const url=image.currentSrc||image.src,doc=$('doc');
+ const dataType=url.match(/^data:image\/([^;,]+)/i)?.[1];
+ const extension=url.split(/[?#]/)[0].match(/\.([a-z0-9]+)$/i)?.[1];
+ const format=({png:'PNG',jpg:'JPEG',jpeg:'JPEG',jfif:'JPEG',gif:'GIF',webp:'WebP',bmp:'BMP',ico:'ICO',svg:'SVG','svg+xml':'SVG',avif:'AVIF'})[dataType||extension?.toLowerCase()]||'Image';
+ state.embeddedImage={tab:state.activeTab,revision:Number($('text').dataset.revision||0),url,scroll:doc.scrollTop,fraction:doc.scrollTop/(doc.scrollHeight||1),focus:image,find:$('find').classList.contains('show')};
+ $('doc').inert=true;
+ app.setImage({url,format,alt:image.alt||'Image in document',embedded:true},state.activeTab);
+ $('image-back').focus({preventScroll:true});
+};
+app.closeEmbeddedImage=(restore=true)=>{
+ const previous=state.embeddedImage;if(!previous)return;state.embeddedImage=null;$('doc').inert=false;app.setImage(null,previous.tab);
+ if(restore&&state.activeTab===previous.tab){
+  if(previous.find){$('find').classList.add('show');$('b-find').setAttribute('aria-pressed','true');app.refreshFind();}
+  app.updateStatus();app.scheduleReaderLayout?.();$('doc').scrollTop=previous.scroll;
+  const focus=previous.focus.isConnected?previous.focus:[...$('article').querySelectorAll('img')].find(image=>(image.currentSrc||image.src)===previous.url);focus?.focus({preventScroll:true});
+ }
+};
+app.wireEmbeddedImages=()=>{
+ for(const image of $('article').querySelectorAll('img')){
+  if(!image.getAttribute('src')||image.dataset.zoomable)continue;
+  image.dataset.zoomable='true';image.tabIndex=0;image.setAttribute('role','button');
+  image.setAttribute('aria-label','Zoom image'+(image.alt?': '+image.alt:''));
+  image.title=(image.title?image.title+' · ':'')+'Click to zoom'+(image.closest('a')?' · '+shortcutLabel('Ctrl+click')+' follows the link':'');
+  image.onclick=event=>{if((event.ctrlKey||event.metaKey)&&image.closest('a'))return;event.preventDefault();event.stopPropagation();app.openEmbeddedImage(image);};
+  image.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();app.openEmbeddedImage(image);}};
+ }
+};
+$('image-back').onclick=()=>app.closeEmbeddedImage();
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'&&state.embeddedImage&&!$('options').classList.contains('show')&&!$('help-overlay').classList.contains('show')&&$('menu-popup').hidden&&$('choice-popup').hidden){event.preventDefault();event.stopImmediatePropagation();app.closeEmbeddedImage();}
+},true);
