@@ -589,3 +589,54 @@ fn trusted_startup_navigation_is_not_blocked_before_the_handshake() {
     assert!(!navigation_allowed(true, "https://example.invalid/"));
     assert!(!navigation_allowed(true, "file:///unexpected.html"));
 }
+
+#[test]
+fn image_files_open_without_text_decoding_or_editable_content() {
+    let f = Fixture::new();
+    let path = f.0.join("picture.PNG");
+    let bytes = include_bytes!("../assets/brand.png");
+    std::fs::write(&path, bytes).unwrap();
+    let loaded = storage::read(&path, 1).unwrap();
+    assert_eq!(loaded.image.as_ref().unwrap().format, "PNG");
+    assert_eq!(loaded.image.as_ref().unwrap().bytes, bytes.len() as u64);
+    assert!(loaded.source.is_empty() && loaded.read_only);
+    let doc = Document::loaded(path.clone(), loaded);
+    assert!(
+        doc.image.is_some()
+            && doc.read_only
+            && !doc.dirty
+            && !doc.editing
+            && doc.fingerprint.is_none()
+    );
+    assert!(tree::list(&f.0, false)
+        .unwrap()
+        .iter()
+        .any(|e| e.name == "picture.PNG" && e.openable));
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    for ext in assets::IMAGE_EXTENSIONS {
+        assert!(assets::image_type(&PathBuf::from(format!("test.{}", ext))).is_some());
+    }
+    assert!(assets::image_type(Path::new("notes.md")).is_none());
+}
+#[test]
+fn oversized_images_are_rejected_without_loading_their_bytes() {
+    let f = Fixture::new();
+    let path = f.0.join("huge.jpg");
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(assets::MAX_IMAGE_BYTES + 1)
+        .unwrap();
+    assert!(storage::read(&path, 32)
+        .unwrap_err()
+        .to_string()
+        .contains("32 MB"));
+    let svg = f.0.join("vector.svg");
+    std::fs::write(
+        &svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"80\" height=\"40\"></svg>",
+    )
+    .unwrap();
+    let image = storage::read(&svg, 1).unwrap();
+    assert_eq!(image.image.unwrap().format, "SVG");
+    assert!(image.read_only && image.source.is_empty());
+}

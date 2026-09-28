@@ -93,6 +93,9 @@ impl RenderWorker {
         });
         Self { pending, latest }
     }
+    pub fn cancel(&self) -> u64 {
+        self.latest.fetch_add(1, Ordering::Relaxed) + 1
+    }
     pub fn submit(&self, mut task: RenderTask) -> u64 {
         task.generation = self.latest.fetch_add(1, Ordering::Relaxed) + 1;
         let generation = task.generation;

@@ -152,10 +152,20 @@ pub fn url_for(target: &str, base: Option<&Path>) -> String {
     {
         return target.to_string();
     }
-    let absolute = resolve(target, base);
-    let encoded = encode(&absolute);
-    if cfg!(target_os = "windows") {
-        format!("http://asset.localhost/{}", encoded.trim_start_matches('/'))
+    asset_url(&resolve(target, base), cfg!(target_os = "windows"))
+}
+fn asset_url(path: &str, windows: bool) -> String {
+    let normalized = if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        format!("//{}", rest.replace('\\', "/"))
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        rest.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
+    let encoded = encode(&normalized);
+    // Preserve both UNC separators; trimming them loses the server/share root.
+    if windows {
+        format!("http://asset.localhost/{}", encoded)
     } else {
         format!("asset://localhost/{}", encoded)
     }
@@ -169,21 +179,33 @@ pub fn brand_url() -> &'static str {
     }
 }
 
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "jfif", "gif", "webp", "bmp", "ico", "svg", "avif",
+];
+pub const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+pub fn image_type(path: &Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => Some("PNG"),
+        "jpg" | "jpeg" | "jfif" => Some("JPEG"),
+        "gif" => Some("GIF"),
+        "webp" => Some("WebP"),
+        "bmp" => Some("BMP"),
+        "ico" => Some("ICO"),
+        "svg" => Some("SVG"),
+        "avif" => Some("AVIF"),
+        _ => None,
+    }
+}
 fn mime_for(path: &Path) -> &'static str {
-    match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("svg") => "image/svg+xml",
-        Some("webp") => "image/webp",
-        Some("bmp") => "image/bmp",
-        Some("ico") => "image/x-icon",
-        Some("avif") => "image/avif",
+    match image_type(path) {
+        Some("PNG") => "image/png",
+        Some("JPEG") => "image/jpeg",
+        Some("GIF") => "image/gif",
+        Some("WebP") => "image/webp",
+        Some("BMP") => "image/bmp",
+        Some("ICO") => "image/x-icon",
+        Some("SVG") => "image/svg+xml",
+        Some("AVIF") => "image/avif",
         _ => "application/octet-stream",
     }
 }
@@ -221,7 +243,7 @@ pub fn serve(uri: &str) -> (Vec<u8>, &'static str, u16) {
         return (b"outside the document folder".to_vec(), "text/plain", 403);
     }
     use std::io::Read;
-    const LIMIT: u64 = 32 * 1024 * 1024;
+    const LIMIT: u64 = MAX_IMAGE_BYTES;
     match std::fs::File::open(&real) {
         Ok(file) => {
             if file
@@ -267,4 +289,20 @@ pub fn worker_pool() -> std::sync::mpsc::Sender<(String, wry::RequestAsyncRespon
         });
     }
     sender
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn native_windows_image_paths_survive_url_encoding() {
+        let drive = asset_url(r"\\?\C:\Pictures\a #1.png", true);
+        assert_eq!(drive, "http://asset.localhost/C%3A/Pictures/a%20%231.png");
+        let unc = asset_url(r"\\?\UNC\server\share\photo.png", true);
+        assert_eq!(unc, "http://asset.localhost///server/share/photo.png");
+        assert_eq!(
+            decode(unc.strip_prefix("http://asset.localhost/").unwrap()),
+            "//server/share/photo.png"
+        );
+    }
 }

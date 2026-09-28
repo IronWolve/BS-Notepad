@@ -27,18 +27,20 @@ else ok "grep audit" "no absolute paths; app identity comes from manifest"; fi
 
 BIN="$ROOT/tmp/target/release/$APP"
 if [ ! -x "$BIN" ]; then bad "rename smoke test" "no release build at tmp/target/release"; else
-  WORK="$ROOT/tmp/rename-check/$(date +%s)-wombat"
+  WORK="$ROOT/tmp/rename-check/$(date +%s)-moved notes"
   mkdir -p "$WORK"
   cp "$BIN" "$WORK/"
   printf '%s\r\n' '# Text' '' '# Renamed' '' 'Running from a differently named directory.' '' '<span style="color:#22c55e">rendering-smoke</span>' '' '## **Formatted** heading' > "$WORK/doc.md"
   cp "$WORK/doc.md" "$WORK/doc.expected"
+  cp "$ROOT/repo/assets/brand.png" "$WORK/image-smoke.png"
   # DISPLAY alone is not enough: with WAYLAND_DISPLAY set, GTK ignores the
   # virtual display and opens a real window on the desktop.
-  OUT=$(cd "$WORK" && env -u WAYLAND_DISPLAY GDK_BACKEND=x11 XDG_SESSION_TYPE=x11 \
-        EXIT_WHEN_READY=1 timeout 60 xvfb-run -a -s '-screen 0 1200x800x24' "./$APP" doc.md 2>&1 || true)
+  OUT=$(cd "$TMPDIR" && env -u WAYLAND_DISPLAY GDK_BACKEND=x11 XDG_SESSION_TYPE=x11 \
+        EXIT_WHEN_READY=1 timeout 60 xvfb-run -a -s '-screen 0 1200x800x24' "$WORK/$APP" "$WORK/doc.md" 2>&1 || true)
   if echo "$OUT" | grep -q READY_MS; then
     ok "rename smoke test" "ran from $(basename "$WORK") ($(echo "$OUT" | grep -o 'READY_MS=[0-9]*'))"
     cmp -s "$WORK/doc.md" "$WORK/doc.expected" && ok "save format" "unchanged document bytes preserved" || bad "save format" "document changed unexpectedly"
+    cmp -s "$WORK/image-smoke.png" "$ROOT/repo/assets/brand.png" && ok "image safety" "image bytes preserved after rejected text save" || bad "image safety" "image file changed unexpectedly"
     [ -f "$WORK/settings.json" ] && ok "self-contained" "settings written beside the binary, not in \$HOME" \
       || bad "self-contained" "no settings.json beside the binary"
   else

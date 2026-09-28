@@ -53,3 +53,7 @@
 !/tools/
 /tools/*
 !/tools/export-icon.rs
+
+!/src/image_viewer.js
+!/tests/image-regressions.js
+!/scripts/build-env.sh

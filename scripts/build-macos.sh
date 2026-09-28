@@ -11,11 +11,13 @@ NAME=$(sed -n 's/^display-name = "\([^"]*\)"/\1/p' "$REPO/Cargo.toml")
 export CARGO_HOME="$ROOT/tmp/cargo" RUSTUP_HOME="$ROOT/tmp/rustup" CARGO_TARGET_DIR="$ROOT/tmp/target" TMPDIR="$ROOT/tmp/build"
 export PATH="$CARGO_HOME/bin:$PATH" MACOSX_DEPLOYMENT_TARGET=14.0
 mkdir -p "$TMPDIR" "$ROOT/deploy/macos"
+source "$REPO/scripts/build-env.sh"
 command -v cargo >/dev/null || { echo 'A project-local Rust 1.95 toolchain is required.'; exit 1; }
 ARGS=(--release --locked -j "${BUILD_JOBS:-2}" --manifest-path "$REPO/Cargo.toml")
 [ "${1:-}" = --setup ] || ARGS+=(--offline)
 printf 'Building %s %s for %s\n' "$NAME" "$VER" "$(uname -m)"
 nice -n 15 cargo build "${ARGS[@]}"
+_notepad_verify_release_paths "$CARGO_TARGET_DIR/release/$BIN"
 STAGE="$ROOT/tmp/macos-package-$$"
 mkdir -p "$STAGE/$NAME.app/Contents/MacOS" "$STAGE/$NAME.app/Contents/Resources" "$STAGE/icon.iconset"
 APP="$STAGE/$NAME.app"
@@ -49,6 +51,12 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <key>LSHandlerRank</key><string>Alternate</string>
 <key>LSItemContentTypes</key><array><string>public.text</string><string>net.daringfireball.markdown</string><string>public.json</string></array>
 <key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string><string>txt</string><string>json</string><string>yaml</string><string>toml</string><string>rs</string><string>py</string><string>js</string></array>
+</dict><dict>
+<key>CFBundleTypeName</key><string>Image</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>LSItemContentTypes</key><array><string>public.png</string><string>public.jpeg</string><string>com.compuserve.gif</string><string>public.svg-image</string><string>org.webmproject.webp</string><string>public.avif</string><string>com.microsoft.bmp</string><string>com.microsoft.ico</string></array>
+<key>CFBundleTypeExtensions</key><array><string>png</string><string>jpg</string><string>jpeg</string><string>jfif</string><string>gif</string><string>webp</string><string>svg</string><string>avif</string><string>bmp</string><string>ico</string></array>
 </dict></array>
 </dict></plist>
 EOF

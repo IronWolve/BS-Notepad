@@ -60,13 +60,14 @@ for(const id of ['find-case','find-word'])$(id).onclick=()=>{$(id).setAttribute(
 $('find-replace').onclick=()=>{$('replace-row').hidden=!$('replace-row').hidden;$('find-replace').setAttribute('aria-expanded',String(!$('replace-row').hidden));if(!$('replace-row').hidden)$('replace-text').focus();};
 $('replace-one').onclick=()=>app.replaceFound(false);$('replace-all').onclick=()=>app.replaceFound(true);
 app.updateStatus=()=>{
+ if(state.image){app.imageStatus?.();return;}
  const editor=$('text');if(!editor)return;
  const prefix=editor.value.slice(0,editor.selectionStart),line=prefix.split('\n').length,column=Array.from(prefix.slice(prefix.lastIndexOf('\n')+1)).length+1;
  $('document-status').hidden=!state.settings.status_bar;
  $('cursor-status').textContent=state.editing?'Ln '+line+', Col '+column:'Read mode';
  $('format-status').textContent=(state.encoding||'UTF-8')+' · '+(state.lineEnding||'LF')+(state.readOnly?' · Read-only preview':'');
 };
-app.goToLine=()=>{if(state.readOnly){app.note('This is a read-only large-file preview.');return;}app.toggleEdit(true);$('line-number').max=$('text').value.split('\n').length;$('line-number').value=1;$('line-dialog').showModal();$('line-number').select();};
+app.goToLine=()=>{if(state.readOnly){app.note('Line navigation is available for editable text documents.');return;}app.toggleEdit(true);$('line-number').max=$('text').value.split('\n').length;$('line-number').value=1;$('line-dialog').showModal();$('line-number').select();};
 $('line-form').onsubmit=e=>{e.preventDefault();const line=Math.max(1,Math.min(Number($('line-number').value)||1,Number($('line-number').max)));let pos=0;for(let i=1;i<line;i++)pos=$('text').value.indexOf('\n',pos)+1;$('line-dialog').close();const editor=$('text');editor.focus();editor.setSelectionRange(pos,pos);editor.scrollTop=(line-1)*parseFloat(getComputedStyle(editor).lineHeight)-editor.clientHeight/2;app.updateStatus();};
 $('line-cancel').onclick=()=>$('line-dialog').close();$('cursor-status').onclick=()=>app.goToLine();
 document.addEventListener('selectionchange',()=>{if(document.activeElement===$('text'))app.updateStatus();});

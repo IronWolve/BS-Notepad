@@ -18,6 +18,9 @@ const TEXTUAL: &[&str] = &[
 ];
 
 fn openable(path: &Path) -> bool {
+    if crate::assets::image_type(path).is_some() {
+        return true;
+    }
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) => TEXTUAL.contains(&ext.to_lowercase().as_str()),
         None => true,

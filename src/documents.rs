@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 #[derive(Clone)]
 pub struct Document {
+    pub image: Option<crate::storage::ImageInfo>,
     pub recovery_key: String,
     pub format: crate::storage::TextFormat,
     pub fingerprint: Option<u64>,
@@ -29,6 +30,7 @@ impl Document {
             .map(|_| crate::storage::fingerprint(source.as_bytes()));
         let source = crate::storage::normalize(&source);
         Self {
+            image: None,
             recovery_key: crate::recovery::key(),
             format,
             fingerprint,
@@ -55,7 +57,12 @@ impl Document {
         doc.path = Some(path);
         doc.seen_mtime = loaded.modified;
         doc.format = loaded.format;
-        doc.fingerprint = Some(loaded.fingerprint);
+        doc.fingerprint = if loaded.image.is_some() {
+            None
+        } else {
+            Some(loaded.fingerprint)
+        };
+        doc.image = loaded.image;
         doc.read_only = loaded.read_only;
         doc
     }

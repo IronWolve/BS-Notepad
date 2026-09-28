@@ -17,6 +17,7 @@ export CARGO_TARGET_DIR="$ROOT/tmp/target"
 export TMPDIR="$ROOT/tmp/build"
 export XDG_CACHE_HOME="$ROOT/tmp/cache"
 mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+source "$REPO/scripts/build-env.sh"
 A=$'\033[38;5;39m'; OK=$'\033[38;5;42m'; Z=$'\033[0m'
 if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then A=""; OK=""; Z=""; fi
 row() { printf "${A}%-18s${Z} %s\n" "$1" "$2"; }
@@ -31,6 +32,7 @@ build() {
   nice -n 15 cargo build "${args[@]}"
   local built="$CARGO_TARGET_DIR/${target:+$target/}release/$BIN$suffix"
   test -s "$built"
+  _notepad_verify_release_paths "$built"
   mkdir -p "$ROOT/deploy/$label"
   cp "$built" "$ROOT/deploy/$label/$BIN$suffix"
   row "$label" "$(stat -c%s "$built") bytes; $((SECONDS-started))s"

@@ -85,7 +85,7 @@ app.documentChrome = () => {
 };
 app.setTabs = payload => {
   state.tabs=payload.tabs;
-  const live=new Set(payload.tabs.map(tab=>tab.id));
+  const live=new Set(payload.tabs.map(tab=>tab.id));app.pruneImages?.(live);
   for(const [id,node] of editorNodes) if(!live.has(id)) {node.remove();editorNodes.delete(id);pendingViews.delete(id);}
   const scroller=$('document-tabs'), scroll=scroller.scrollLeft, focus=document.activeElement?.dataset.tabId;
   scroller.replaceChildren();
@@ -137,6 +137,7 @@ app.beginDocument=payload=>{
   const changed=state.activeTab!==payload.tab||!editorNodes.has(payload.tab);
   editorFor(payload.tab);if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();}
   state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
+  app.setImage?.(payload.image,payload.tab);
   app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();
 };
 app.finishDocument=payload=>{
@@ -153,6 +154,7 @@ app.setDocument = payload => {
   editorFor(id);
   if(changed)pendingViews.set(id,payload);
   state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;$("text").readOnly=state.readOnly;
+  app.setImage?.(payload.image,id);
   baseDocument(payload);state.renderRevision=payload.revision??0;
   for(const table of $('article').querySelectorAll('table')) {
     if(table.parentElement.classList.contains('table-scroll'))continue;
@@ -339,6 +341,11 @@ const HELP = [
   'The optional status strip shows line, column, encoding and line endings. UTF-8 and marked UTF-16 files keep their format. Large files open as read-only previews of the first 256 KB; the threshold is in Options → Document.',
   'The main menu can clear recent files or clean old app logs and marked release backups. Retention limits are in Options → Workspace. Unmarked folders and unrelated files are preserved. Options → Document also controls remote images.'
  ]},
+ {id:'images',title:'Images',paragraphs:[
+  'Open a picture from Explorer, Open File or drag and drop. PNG, JPEG, GIF, WebP, BMP, ICO, SVG and AVIF files open inside the document area as view-only tabs. Files are limited to 32 MB; formats supported by the system browser are displayed.',
+  'The image starts fitted to the window. Use the plus and minus buttons or Ctrl+wheel to zoom. The fit button shows the whole image; 1:1 or Ctrl+0 shows actual pixels. Drag a zoomed image to pan, or use the canvas scrollbars.',
+  'Enable the magnifying-glass button, then move over the picture to inspect details. Move away to hide the lens. With the canvas focused, F fits the picture and M toggles the magnifier. Image zoom is separate from your text zoom setting.'
+ ]},
  {id:'map',title:'Document map',paragraphs:[
   'The map at the right is a small overview of your current document. Its outlined area shows the visible portion. Click or drag it to move through a long file.',
   'Use the Document map button in the toolbar, the main menu, or Options → Editor to show or hide it. With the map focused, arrow keys and Page Up / Page Down scroll the document.'
@@ -384,14 +391,14 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:'New note',icon:'note',hint:'Ctrl+N',action:()=>$('b-new').click()},
  {label:'Browse for a file…',icon:'open',hint:'Ctrl+O',action:()=>$('b-open').click()},
  {label:'Choose a workspace folder…',icon:'workspace',action:()=>$('folder-open').click()},null,
- {label:'Save edits',icon:'save',hint:'Ctrl+S',action:()=>$('b-save').click()},
- {label:'Save a copy…',icon:'saveAs',hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
+ {label:'Save edits',icon:'save',disabled:!!state.readOnly,hint:'Ctrl+S',action:()=>$('b-save').click()},
+ {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
  {label:'Read again from disk',icon:'reload',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
  {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},
  {label:'Reopen closed tab',icon:'newTab',hint:'Ctrl+Shift+T',action:()=>send({cmd:'reopenTab'})},null,
- {label:state.editing?'Read document':'Edit document',icon:state.editing?'read':'edit',hint:'Ctrl+E',action:()=>$('b-edit').click()},
- {label:state.settings.view_mode==='source'?'Rendered view':'Source view',icon:state.settings.view_mode==='source'?'rendered':'source',hint:'Ctrl+U',action:()=>$('b-view').click()},
- {label:'Document map',icon:'map',checked:!!state.settings.minimap,action:()=>$('b-map').click()},
+ {label:state.editing?'Read document':'Edit document',disabled:!!state.readOnly,icon:state.editing?'read':'edit',hint:'Ctrl+E',action:()=>$('b-edit').click()},
+ {label:state.settings.view_mode==='source'?'Rendered view':'Source view',disabled:!!state.image,icon:state.settings.view_mode==='source'?'rendered':'source',hint:'Ctrl+U',action:()=>$('b-view').click()},
+ {label:'Document map',icon:'map',disabled:!!state.image,checked:!!state.settings.minimap,action:()=>$('b-map').click()},
  {label:'Wrap long lines',icon:'wrap',checked:!!state.settings.word_wrap,action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},
  {label:'Clear recent files',icon:'closeOthers',action:()=>send({cmd:'clearRecents'})},
  {label:'Clean old logs and backups',icon:'collapse',action:()=>send({cmd:'cleanHistory'})},
@@ -408,7 +415,7 @@ $('drag-region').ondblclick=()=>send({cmd:'windowMaximize'});
 for(const edge of $('resize-edges').children)edge.onmousedown=e=>{if(e.button===0){e.preventDefault();send({cmd:'windowResize',direction:edge.dataset.direction});}};
 app.windowState=maximized=>{document.body.classList.toggle('maximized',maximized);$('window-max').textContent=maximized?'❐':'□';$('window-max').title=maximized?'Restore':'Maximize';$('window-max').setAttribute('aria-label',maximized?'Restore':'Maximize');};
 
-function scrollTarget(){return state.editing?$('text'):$('doc');}
+function scrollTarget(){return state.image?$('image-viewport'):state.editing?$('text'):$('doc');}
 app.mapPosition=()=>{
  if(!$('minimap')||$('minimap').hidden)return;
  const target=scrollTarget();if(!target)return;
@@ -457,6 +464,7 @@ app.flushZoom=()=>{
   send({cmd:'setting',key:'zoom',value:zoomTarget});
 };
 app.setZoom=value=>{
+  if(state.image){app.setImageZoom(value);return;}
   if(!Number.isFinite(value))return;
   const next=Math.round(Math.max(.5,Math.min(3,value))*100)/100;
   if(Math.abs(next-(zoomTarget??state.settings.zoom??1))<.0001)return;
@@ -464,7 +472,7 @@ app.setZoom=value=>{
   zoomTimer=setTimeout(app.flushZoom,120);
   app.applySettings({...state.settings,zoom:next});
 };
-app.adjustZoom=step=>app.setZoom((Math.round((zoomTarget??state.settings.zoom??1)*100)+step*10)/100);
+app.adjustZoom=step=>{if(state.image)app.zoomImageStep(step);else app.setZoom((Math.round((zoomTarget??state.settings.zoom??1)*100)+step*10)/100);};
 function zoomBlocked(){return $('options').classList.contains('show')||$('help-overlay').classList.contains('show')||!$('menu-popup').hidden||!$('choice-popup').hidden;}
 document.addEventListener('wheel',event=>{
   if(!event.ctrlKey&&!event.metaKey)return;
@@ -484,7 +492,7 @@ app.applySettings=settings=>{
    else settings={...settings,zoom:zoomTarget};
  }
  settings={...settings,zoom:Math.round(settings.zoom*100)/100};
- originalSettings(settings);app.favoriteLabel?.();app.updateStatus?.();app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!settings.minimap;$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
+ originalSettings(settings);app.favoriteLabel?.();app.updateStatus?.();app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!!state.image||!settings.minimap;app.syncImageControls?.();$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
 const originalTheme=app.applyTheme;app.applyTheme=theme=>{if(theme.id&&theme.id!==(state.previewTheme||state.settings.theme))return;originalTheme(theme);app.scheduleMap();};
 new ResizeObserver(()=>{app.scheduleMap();app.scheduleReaderLayout?.();closeChoices(false);closeMenu(false);}).observe($('content-row'));
 
@@ -497,7 +505,8 @@ const readerMeasure=document.createElement('canvas').getContext('2d');
 app.layoutReader=()=>{
   const article=$('article'),doc=$('doc'),available=doc.clientWidth;if(!available)return;
   const markdown=!state.path||/\.(md|markdown|mdown|mkd|mkdn|mdx)$/i.test(state.path);
-  if(!markdown||state.settings.view_mode==='source'){
+  if(state.image)return;
+ if(!markdown||state.settings.view_mode==='source'){
     article.style.setProperty('--reader-width','100%');article.style.setProperty('--reader-offset','0px');return;
   }
   const style=getComputedStyle(article),padding=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),size=parseFloat(style.fontSize);

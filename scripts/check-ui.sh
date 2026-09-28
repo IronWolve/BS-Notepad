@@ -10,3 +10,6 @@ trap 'agent-browser close >/dev/null 2>&1 || true' EXIT
 agent-browser open "file://$ROOT/tmp/browser-regressions/fixture.html"
 agent-browser set viewport 1200 800
 agent-browser eval --stdin < "$ROOT/repo/tests/ui-regressions.js"
+
+agent-browser open "file://$ROOT/tmp/browser-regressions/fixture.html"
+agent-browser eval --stdin < "$ROOT/repo/tests/image-regressions.js"

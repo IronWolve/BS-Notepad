@@ -404,16 +404,22 @@ impl App {
     }
 
     fn render_current(&mut self, scroll: f32) {
+        #[cfg(target_os = "macos")]
+        mac_menu::document_controls(&self._menu, self.image.is_some(), !self.read_only);
         let t = self.theme();
-        self.generation = self.render_worker.submit(jobs::RenderTask {
-            generation: 0,
-            tab: self.id,
-            revision: self.edit_revision,
-            path: self.path.clone(),
-            text: self.source.clone(),
-            settings: self.settings.clone(),
-            theme: t.clone(),
-        });
+        if self.image.is_some() {
+            self.generation = self.render_worker.cancel();
+        } else {
+            self.generation = self.render_worker.submit(jobs::RenderTask {
+                generation: 0,
+                tab: self.id,
+                revision: self.edit_revision,
+                path: self.path.clone(),
+                text: self.source.clone(),
+                settings: self.settings.clone(),
+                theme: t.clone(),
+            });
+        }
         let name = self.name();
 
         self.send_tabs();
@@ -426,6 +432,7 @@ impl App {
             "selectionStart": self.selection_start,
             "selectionEnd": self.selection_end,
             "dirty": self.dirty,
+            "image":self.image.as_ref().and_then(|image|self.path.as_ref().map(|path|json!({"format":image.format,"bytes":image.bytes,"url":format!("{}?image={}-{}",assets::url_for(&path.to_string_lossy(),None),self.id,self.seen_mtime.and_then(|time|time.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_nanos()).unwrap_or(0))}))),
             "encoding": self.format.encoding, "lineEnding":self.format.ending, "readOnly":self.read_only, "externalChanged":self.external_changed,
             "generation":self.generation,
             "name": name,
@@ -440,6 +447,9 @@ impl App {
             })
         ));
 
+        if self.image.is_some() {
+            self.run_js(format!("window.app.finishDocument({});",json!({"tab":self.id,"revision":self.edit_revision,"generation":self.generation,"renderKey":format!("image-{}",self.id),"html":"","outline":[],"frontMatter":"","note":""})));
+        }
         let title = match &self.path {
             Some(_) => format!("{} - {}", name, root::app_name()),
             None => root::app_name().to_string(),
@@ -545,6 +555,7 @@ impl App {
                     "yml", "sh",
                 ],
             )
+            .add_filter("Images", assets::IMAGE_EXTENSIONS)
             .add_filter("All files", &["*"]);
         if let Some(dir) = self.path.as_ref().and_then(|p| p.parent()) {
             dialog = dialog.set_directory(dir);
@@ -563,7 +574,11 @@ impl App {
 
     fn save(&mut self, text: String, save_as: bool) -> bool {
         if self.read_only {
-            self.notify("Read-only preview: the original file cannot be overwritten.");
+            self.notify(if self.image.is_some() {
+                "Images are view-only and cannot be overwritten by the text editor."
+            } else {
+                "Read-only preview: the original file cannot be overwritten."
+            });
             return false;
         }
         let path = match self.path.clone().filter(|_| !save_as) {

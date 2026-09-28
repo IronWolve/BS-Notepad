@@ -383,6 +383,24 @@ article th,article td { overflow-wrap:normal; }
 #theme-favorite { flex-shrink:0; color:var(--dim); }
 #choice-popup.theme-grid { max-width:min(620px,calc(100vw - 16px)); }
 @media(min-width:1000px) { #choice-popup.theme-grid #choice-list { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+#image-viewer { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--bg); }
+#image-tools { display:flex; align-items:center; justify-content:flex-end; gap:5px; padding:9px 18px 2px; min-height:38px; }
+#image-tools button { display:inline-flex; align-items:center; justify-content:center; width:29px; height:28px; border:0; border-radius:6px; padding:5px; background:transparent; color:var(--fg); opacity:.55; font-size:11px; }
+#image-tools button:hover,#image-tools button:focus-visible { opacity:1; background:var(--hover); }
+#image-tools button[aria-pressed=true] { opacity:.9; background:var(--selected); }
+#image-tools button:disabled { opacity:.2; cursor:default; }
+#image-percent { min-width:42px; text-align:center; font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.image-divider { height:13px; width:1px; margin:0 5px; background:color-mix(in srgb,var(--fg) 12%,transparent); }
+#image-viewport { flex:1; min-height:0; min-width:0; position:relative; overflow:auto; outline-offset:-3px; scrollbar-width:thin; scrollbar-color:color-mix(in srgb,var(--fg) 24%,transparent) transparent; }
+#image-board { display:grid; place-items:center; width:max-content; height:max-content; min-width:100%; min-height:100%; padding:24px; }
+.image-paper { display:grid; overflow:hidden; border-radius:4px; background-color:var(--bg); background-image:conic-gradient(color-mix(in srgb,var(--fg) 5%,var(--bg)) 25%,transparent 0 50%,color-mix(in srgb,var(--fg) 5%,var(--bg)) 0 75%,transparent 0); background-size:16px 16px; box-shadow:0 0 0 1px color-mix(in srgb,var(--fg) 10%,transparent),0 6px 22px #00000012; }
+.image-paper img { display:block; max-width:none; max-height:none; user-select:none; cursor:grab; }
+#image-viewport.panning,#image-viewport.panning img { cursor:grabbing; }
+#image-message { position:absolute; inset:0; display:grid; place-items:center; margin:0; padding:40px; color:var(--dim); text-align:center; pointer-events:none; }
+#image-lens { position:fixed; z-index:12; pointer-events:none; border-radius:50%; border:2px solid color-mix(in srgb,var(--fg) 48%,var(--bg)); background-color:var(--bg); background-repeat:no-repeat; box-shadow:0 6px 25px #0005,inset 0 0 0 2px color-mix(in srgb,var(--bg) 60%,transparent); }
+#image-viewport::-webkit-scrollbar { width:6px; height:6px; }
+#image-viewport::-webkit-scrollbar-track { background:transparent; }
+#image-viewport::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--fg) 24%,transparent); border-radius:6px; }
 </style></head><body>
 
 <div id="hot"></div>
@@ -464,6 +482,19 @@ article th,article td { overflow-wrap:normal; }
     <div id="content-row" role="tabpanel"><div id="content-main">
     <div id="fm"></div>
     <div id="doc"><article id="article"></article></div>
+    <section id="image-viewer" aria-label="Image viewer" hidden>
+      <div id="image-tools" role="toolbar" aria-label="Image controls">
+        <button id="image-minus" aria-label="Zoom out" title="Zoom out (Ctrl+Minus)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+        <output id="image-percent" aria-label="Image zoom">—</output>
+        <button id="image-plus" aria-label="Zoom in" title="Zoom in (Ctrl+Plus)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+        <span class="image-divider" aria-hidden="true"></span>
+        <button id="image-fit" aria-label="Fit image" aria-pressed="true" title="Fit image (F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
+        <button id="image-actual" aria-label="Actual size" title="Actual size (Ctrl+0)">1:1</button>
+        <button id="image-magnify" aria-label="Magnifying glass" aria-pressed="false" title="Magnifying glass: enable, then hover over the image (M)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6M7 10h6M10 7v6"/></svg></button>
+      </div>
+      <div id="image-viewport" tabindex="0" aria-label="Image canvas. Drag to pan when zoomed. F fits the image; M toggles the magnifier."><div id="image-board"></div><p id="image-message" role="status"></p></div>
+      <div id="image-lens" aria-hidden="true" hidden></div>
+    </section>
     <div id="editor"><textarea id="text" aria-label="Document editor" spellcheck="false"></textarea></div>
     </div><aside id="minimap" aria-label="Document map"><canvas id="map-canvas" aria-hidden="true"></canvas><div id="map-viewport" role="scrollbar" tabindex="0" aria-label="Document map position" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-controls="doc"></div></aside></div>
   <div id="document-status"><button id="cursor-status" title="Go to line (Ctrl+G)">Read mode</button><span id="format-status"></span></div>
@@ -538,7 +569,7 @@ function fileAppearance(name, directory = false, expanded = false) {
   ['c h cpp hpp cc cxx','blue','C','C / C++'], ['cs fs fsx','purple','C#','Managed source'],
   ['rb','pink','diamond','Ruby'], ['php','purple','php','PHP'], ['swift','orange','code','Swift'],
   ['sql db sqlite sqlite3','gold','database','Database'], ['csv tsv xls xlsx','green','table','Table'],
-  ['png jpg jpeg webp gif bmp ico avif svg','teal','image','Image'],
+  ['png jpg jpeg jfif webp gif bmp ico avif svg','teal','image','Image'],
   ['mp3 wav flac ogg m4a aac','purple','music','Audio'], ['mp4 mov webm mkv avi','pink','video','Video'],
   ['zip tar gz bz2 xz 7z rar','gold','box','Archive'], ['pdf','pink','PDF','PDF'],
   ['exe dll so dylib bin','muted','box','Binary'], ['woff woff2 ttf otf','orange','Aa','Font']
@@ -863,15 +894,15 @@ const app = {
     }
   },
   toggleEdit(on, notify = true) {
-    if(on && state.readOnly){if(notify)app.note("This large file is a read-only preview.");on=false;}
+    if(on && state.readOnly){if(notify)app.note(state.image?"Images are view-only.":"This large file is a read-only preview.");on=false;}
     state.editing = on;
     $("editor").classList.toggle("show", on);
-    $("doc").style.display = on ? "none" : "";
+    $("doc").style.display = on || state.image ? "none" : "";
     $("b-edit").classList.toggle("on", on);
     $("b-edit").setAttribute("aria-label",on ? "Read document" : "Edit document");
     $("b-edit").setAttribute("aria-pressed",String(on));
     setCommand("b-edit",on ? "preview" : "edit",on ? "Preview" : "Edit");
-    $("fm").hidden = on;
+    $("fm").hidden = on || !!state.image;
     if (on && notify) $("text").focus();
     app.updateStatus?.();
     if (notify) send({cmd:"viewState"});
@@ -1053,8 +1084,7 @@ $("pane-files").onkeydown = e => {
   } else return;
   e.preventDefault(); if(target) { target.focus();target.scrollIntoView({block:'nearest'}); }
 };
-$("b-view").onclick = () => send({ cmd:"setting", key:"view_mode",
-  value: state.settings.view_mode === "source" ? "rendered" : "source" });
+$("b-view").onclick = () => {if(state.image)return;send({ cmd:"setting", key:"view_mode",value: state.settings.view_mode === "source" ? "rendered" : "source" });};
 $("b-open").onclick = () => send({ cmd:"open" });
 $("b-save").onclick = () => send({ cmd:"save", text:$("text").value });
 $("b-edit").onclick = () => { app.toggleEdit(!state.editing); if (!state.editing) send({cmd:"preview"}); };
@@ -1104,6 +1134,7 @@ $("b-zoomreset").onclick = () => app.setZoom(1);
 $("b-zoomin").onclick = () => app.adjustZoom(1);
 $("b-zoomout").onclick = () => app.adjustZoom(-1);
 app.showFind = open => {
+  if(open&&state.image)return;
   const hadFocus = $("find").contains(document.activeElement);
   $("find").classList.toggle("show", open);
   $("b-find").setAttribute("aria-pressed", String(open));
@@ -1164,6 +1195,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "F3") step(e.shiftKey ? -1 : 1);
 });
 /* WORKSPACE_UI */
+/* IMAGE_UI */
 let readyAttempts=0;
 app.requestReady=()=>{if(state.hostReady)return;try{send({cmd:"ready"});}catch(error){window.startupErrors.push(String(error));}if(++readyAttempts<20)setTimeout(app.requestReady,250);};
 app.requestReady();
@@ -1183,5 +1215,6 @@ pub fn shell() -> String {
     SHELL
         .replace("/* WORKSPACE_UI */", include_str!("workspace.js"))
         .replace("/* FIND_UI */", include_str!("find.js"))
+        .replace("/* IMAGE_UI */", include_str!("image_viewer.js"))
         .replace("__SCRIPT_NONCE__", &nonce)
 }

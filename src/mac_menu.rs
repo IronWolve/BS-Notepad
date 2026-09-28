@@ -118,3 +118,21 @@ pub fn create(proxy: EventLoopProxy<UserEvent>) -> Result<Menu, muda::Error> {
     }));
     Ok(menu)
 }
+
+pub fn document_controls(menu: &Menu, image: bool, editable: bool) {
+    fn visit(items: Vec<muda::MenuItemKind>, image: bool, editable: bool) {
+        for item in items {
+            if let Some(submenu) = item.as_submenu() {
+                visit(submenu.items(), image, editable);
+            }
+            if let Some(command) = item.as_menuitem() {
+                match command.id().0.as_str() {
+                    "save" | "saveAs" | "replace" => command.set_enabled(editable),
+                    "find" => command.set_enabled(!image),
+                    _ => {}
+                }
+            }
+        }
+    }
+    visit(menu.items(), image, editable);
+}

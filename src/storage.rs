@@ -76,8 +76,15 @@ pub fn fingerprint(bytes: &[u8]) -> u64 {
         (hash ^ *byte as u64).wrapping_mul(0x100000001b3)
     })
 }
+#[derive(Clone, Debug, Serialize)]
+pub struct ImageInfo {
+    pub format: String,
+    pub bytes: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct Loaded {
+    pub image: Option<ImageInfo>,
     pub modified: Option<std::time::SystemTime>,
     pub source: String,
     pub format: TextFormat,
@@ -89,6 +96,24 @@ pub fn read(path: &Path, limit_mb: u32) -> io::Result<Loaded> {
     let meta = file.metadata()?;
     if !meta.is_file() {
         return Err(io::Error::other("Only regular text files can be opened."));
+    }
+    if let Some(format) = crate::assets::image_type(path) {
+        if meta.len() > crate::assets::MAX_IMAGE_BYTES {
+            return Err(io::Error::other(
+                "This image exceeds the 32 MB viewing limit.",
+            ));
+        }
+        return Ok(Loaded {
+            image: Some(ImageInfo {
+                format: format.into(),
+                bytes: meta.len(),
+            }),
+            modified: meta.modified().ok(),
+            source: String::new(),
+            format: TextFormat::default(),
+            fingerprint: 0,
+            read_only: true,
+        });
     }
     let limit = (limit_mb as usize * 1024 * 1024).min(MAX_EDIT_BYTES);
     let read_only = meta.len() > limit as u64;
@@ -146,6 +171,7 @@ pub fn read(path: &Path, limit_mb: u32) -> io::Result<Loaded> {
     let mut format = TextFormat::from_text(&text);
     format.encoding = encoding.into();
     Ok(Loaded {
+        image: None,
         modified: meta.modified().ok(),
         source: normalize(&text),
         format,

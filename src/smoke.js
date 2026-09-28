@@ -79,6 +79,13 @@
   check($('text').scrollTop>0,'map scroll');
   send({cmd:'closeTab',id:original});await until(()=>state.tabs.length===1,'close saved tab');
   send({cmd:'reopenTab'});await until(()=>state.tabs.length===2&&state.activeTab!==draftId&&$('text').value===source,'reopen closed saved tab');
+  const imagePath=state.path.replace(/[^\\/]+$/,'image-smoke.png');const textId=state.activeTab;
+  send({cmd:'openPath',path:imagePath,newTab:true});await until(()=>!!state.image&&!!imageContext?.loaded,'native image tab');
+  check($('b-save').disabled&&$('b-edit').disabled&&$('minimap').hidden,'image actions');
+  const beforeScale=imageContext.scale;$('image-plus').click();check(imageContext.scale>beforeScale,'native image zoom');
+  $('image-magnify').click();check(imageContext.loupe,'native magnifier toggle');
+  send({cmd:'save',text:'must not overwrite image'});await inspect('image-write-refused');
+  send({cmd:'activateTab',id:textId});await until(()=>state.activeTab===textId&&!state.image&&$('text').value===source,'text restored after image');
   window.ipc.postMessage(JSON.stringify({cmd:'smokeReady',ok:true}));
  } catch(error) {
   window.ipc.postMessage(JSON.stringify({cmd:'smokeReady',ok:false,error:String(error)}));
