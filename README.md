@@ -6,7 +6,7 @@
 <p align="center">A quiet desktop workspace for notes, Markdown, source files, and images.</p>
 <p align="center">Windows · Linux · macOS</p>
 
-![Single-document reading view with the file browser closed and no tabs](assets/screenshots/workspace.png)
+![Long document with a full right-hand preview, the file browser closed, and no tabs](assets/screenshots/workspace.png)
 
 Read a document, switch to its source, and edit it in the same window. BS Notepad keeps the controls subtle, your files close by, and the colors your own.
 
