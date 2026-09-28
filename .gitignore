@@ -59,6 +59,14 @@
 !/scripts/build-env.sh
 !/tests/markdown-image-regressions.js
 
+# Public project overview and reviewed presentation assets.
+!/README.md
+!/assets/screenshots/
+/assets/screenshots/*
+!/assets/screenshots/workspace.png
+!/assets/screenshots/themes.png
+!/assets/screenshots/images.png
+
 # Private data and generated output stay excluded at every directory depth.
 # Keep these rules after the explicit source allowlist above.
 # Ignore rules do not remove files or metadata already in Git history.
