@@ -68,6 +68,40 @@
 !/assets/screenshots/themes.png
 !/assets/screenshots/images.png
 
+# Reviewed copyright notices and third-party source required for redistribution.
+!/COPYRIGHT
+!/THIRD-PARTY-NOTICES.txt
+!/third-party/
+/third-party/*
+!/third-party/manifest.json
+!/third-party/option-ext-0.2.0/
+/third-party/option-ext-0.2.0/*
+!/third-party/option-ext-0.2.0/Cargo.toml
+!/third-party/option-ext-0.2.0/Cargo.toml.orig
+!/third-party/option-ext-0.2.0/README.md
+!/third-party/option-ext-0.2.0/LICENSE.txt
+!/third-party/option-ext-0.2.0/src/
+/third-party/option-ext-0.2.0/src/*
+!/third-party/option-ext-0.2.0/src/lib.rs
+!/third-party/option-ext-0.2.0/src/impl.rs
+!/third-party/rust/
+/third-party/rust/*
+!/third-party/rust/COPYRIGHT-library.html
+!/third-party/rust/licenses/
+/third-party/rust/licenses/*
+!/third-party/rust/licenses/Apache-2.0.txt
+!/third-party/rust/licenses/BSD-2-Clause.txt
+!/third-party/rust/licenses/CC-BY-SA-4.0.txt
+!/third-party/rust/licenses/GCC-exception-3.1.txt
+!/third-party/rust/licenses/GPL-2.0-only.txt
+!/third-party/rust/licenses/GPL-3.0-or-later.txt
+!/third-party/rust/licenses/ISC.txt
+!/third-party/rust/licenses/LLVM-exception.txt
+!/third-party/rust/licenses/MIT.txt
+!/third-party/rust/licenses/NCSA.txt
+!/third-party/rust/licenses/OFL-1.1.txt
+!/third-party/rust/licenses/Unicode-3.0.txt
+
 # Private data and generated output stay excluded at every directory depth.
 # Keep these rules after the explicit source allowlist above.
 # Ignore rules do not remove files or metadata already in Git history.

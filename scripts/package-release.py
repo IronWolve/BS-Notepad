@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import plistlib
 import re
 import stat
@@ -93,6 +93,27 @@ def main():
             if installed != {'name': name, 'version': version}:
                 raise ValueError('Installation manifest does not match source')
             instructions = f'Extract the complete folder and run {name}.exe. Keep WebView2Loader.dll beside it.\nRequires x64 Windows and the WebView2 runtime. Keep this folder writable for settings, logs and recovery data.\nOptional: register-file-types.ps1 registers Markdown Open with entries for the current user; -Remove reverses registration.\n'
+    legal_manifest_path = repo / 'third-party' / 'manifest.json'
+    legal_manifest = json.loads(legal_manifest_path.read_text())
+    if legal_manifest['cargo_lock_sha256'] != digest((repo / 'Cargo.lock').read_bytes()):
+        raise ValueError('Dependencies changed; update the reviewed third-party notices first')
+    for filename, expected in legal_manifest['files'].items():
+        relative = PurePosixPath(filename)
+        if relative.is_absolute() or '..' in relative.parts or not (filename == 'THIRD-PARTY-NOTICES.txt' or filename.startswith('third-party/')):
+            raise ValueError('Invalid legal-file manifest entry')
+        path = repo / filename
+        if path.is_symlink() or not path.resolve().is_relative_to(repo):
+            raise ValueError('Legal-file manifest resolves outside the repository')
+        data = path.read_bytes()
+        if digest(data) != expected:
+            raise ValueError(f'Unreviewed legal-file change: {filename}')
+        files[filename] = data
+    files['third-party/manifest.json'] = legal_manifest_path.read_bytes()
+    files['COPYRIGHT'] = (repo / 'COPYRIGHT').read_bytes()
+    instructions += ('\nCopyright © 2026 IronWolve. All rights reserved.\n'
+                     'No license is currently granted for the original project code.\n'
+                     'Third-party components retain their own license permissions.\n'
+                     'See COPYRIGHT, THIRD-PARTY-NOTICES.txt and third-party/ for details.\n')
     files['Read Me.txt'] = (f'{display} {version}\n\n' + instructions + '\nThis archive contains application files only. Existing settings are not included.\n').encode()
     revision = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
     manifest = {'name': name, 'version': version, 'platform': args.platform, 'architecture': arch,

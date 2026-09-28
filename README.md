@@ -78,3 +78,9 @@ Images are view-only and limited to 32 MB. PNG, JPEG, GIF, WebP, BMP, ICO, SVG, 
 ## Project
 
 Maintained by [IronWolve](https://github.com/IronWolve). When reporting a bug, include the app version, operating system, and steps to reproduce it. Use a small sample file with personal information removed.
+
+## Copyright
+
+Copyright © 2026 IronWolve. All rights reserved. No license is currently granted for the original project code. Third-party components remain subject to their respective licenses.
+
+See [COPYRIGHT](COPYRIGHT) for the project notice and [third-party notices](THIRD-PARTY-NOTICES.txt) for dependency and bundled-asset licenses. The unmodified MPL-2.0 component's [source and license](third-party/option-ext-0.2.0/) are included in the repository and release ZIPs. These third-party permissions are not restricted by the project's copyright notice.
