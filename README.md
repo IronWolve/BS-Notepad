@@ -35,7 +35,7 @@ Open a file with **Ctrl+O**, or choose a folder with **Ctrl+Shift+O**. Dragging 
 
 The main menu is at the upper left. Files and the theme picker sit beside it. Find, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
 
-The source repository does not contain compiled applications. Build instructions are below; any downloadable packages should be supplied separately as release assets.
+The source repository does not contain compiled applications. Application packages are distributed separately as ZIP archives.
 
 | Platform | Running a built package |
 | --- | --- |
@@ -74,92 +74,6 @@ Your notes remain ordinary files in the folders you choose. On Windows and Linux
 Remote images in Markdown can make network requests; disable them in **Options → Document** if you want to prevent those image requests. Recent files and restored tabs can contain local paths. **Clear recent files** is available in the main menu. Recovery drafts are a fallback, not a substitute for saving or keeping backups.
 
 Images are view-only and limited to 32 MB. PNG, JPEG, GIF, WebP, BMP, ICO, SVG, and AVIF are recognized; decoding depends on the platform's webview. Large text files use a read-only preview of the first 256 KB once they exceed the configured threshold. UTF-8 and BOM-marked UTF-16 files retain their encoding and line endings when saved.
-
-## Build from source
-
-The build scripts expect a checkout named `repo` inside a project directory. Outputs stay outside the checkout:
-
-```text
-bs-notepad/
-├── repo/       # this repository
-├── tmp/        # compilation, caches, and test output
-├── deploy/     # built application files
-└── dists/      # reviewed distribution ZIPs and checksums
-```
-
-Clone your chosen repository URL into that layout:
-
-```sh
-mkdir -p bs-notepad
-cd bs-notepad
-git clone YOUR_REPOSITORY_URL repo
-```
-
-Run the following commands from the enclosing `bs-notepad` directory. Rust **1.95 or later** is required. Build scripts use locked dependencies and default to offline mode; prepare the dependency cache explicitly before the first build.
-
-### Linux
-
-Install a C/C++ build toolchain, `pkg-config`, and the GTK 3 and WebKitGTK 4.1 development libraries using your distribution's packages. Then:
-
-```sh
-mkdir -p tmp/build tmp/cache tmp/cargo
-export CARGO_HOME="$PWD/tmp/cargo" XDG_CACHE_HOME="$PWD/tmp/cache"
-export CARGO_TARGET_DIR="$PWD/tmp/target" TMPDIR="$PWD/tmp/build"
-cargo fetch --locked --manifest-path repo/Cargo.toml
-repo/scripts/build.sh linux
-```
-
-Output: `deploy/linux/bs-notepad`.
-
-### Windows cross-build
-
-The provided Windows packager runs on Linux or WSL. It requires the `x86_64-pc-windows-gnu` Rust target and an x86-64 MinGW compiler and resource tools, in addition to the dependency cache prepared above.
-
-```sh
-repo/scripts/build.sh windows
-```
-
-Output: `deploy/windows/`. To copy the package to a Windows destination, set it explicitly:
-
-```sh
-WINDOWS_DEST=/mnt/c/Apps/bs-notepad repo/scripts/build.sh windows --install
-```
-
-Installation preserves settings and retains previous application files. It does not start the application.
-
-### macOS
-
-Build on a Mac with the command-line developer tools and a Rust 1.95+ toolchain installed under the project's `tmp/cargo` and `tmp/rustup` directories. The script uses those directories explicitly.
-
-```sh
-repo/scripts/build-macos.sh --setup
-```
-
-`--setup` permits downloading the locked dependencies; subsequent builds can omit it to work offline. Output goes to `deploy/macos/` as an app bundle and an archive. Public notarization is not part of this script.
-
-### Checks
-
-With the dependency cache and platform development libraries available:
-
-```sh
-mkdir -p tmp/build
-CARGO_TARGET_DIR="$PWD/tmp/target" TMPDIR="$PWD/tmp/build" \
-  cargo test --release --offline --locked -j 2 --manifest-path repo/Cargo.toml
-```
-
-`repo/scripts/check-ui.sh` exercises the exported interface and image viewers with `agent-browser`. `repo/scripts/check-portable.sh` checks a built Linux application on a virtual display and requires Xvfb. These tools must already be installed; the scripts do not install them.
-
-### Distribution archives
-
-After building, package only the approved application files:
-
-```sh
-python3 repo/scripts/package-release.py linux
-python3 repo/scripts/package-release.py windows
-python3 repo/scripts/package-release.py macos --macos-archive deploy/macos/bs-notepad-0.7.4-arm64.zip
-```
-
-The packager writes ZIPs and SHA-256 checksums to `dists/` outside Git. It uses explicit file manifests, checks for development home paths, and omits host archive metadata. Use `--private-marker` to reject additional private text. Settings, recovery files, logs, and browser profiles are never part of these packages. The supplied Linux package requires glibc 2.39 or newer in addition to its GUI libraries.
 
 ## Project
 
