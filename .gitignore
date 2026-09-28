@@ -58,3 +58,81 @@
 !/tests/image-regressions.js
 !/scripts/build-env.sh
 !/tests/markdown-image-regressions.js
+
+# Private data and generated output stay excluded at every directory depth.
+# Keep these rules after the explicit source allowlist above.
+# Ignore rules do not remove files or metadata already in Git history.
+
+# Credentials and personal configuration
+.env
+.env.*
+.config/
+.ssh/
+secrets/
+credentials/
+credentials.json
+credentials*.json
+secrets*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_ed25519
+.npmrc
+.netrc
+
+# Application state, recovery copies and embedded-browser profiles
+settings.json
+settings.json.*
+instance.port
+instance.lock
+recovery/
+*-data/
+*.WebView2/
+logs/
+*.log
+
+# Builds, packages, dependencies, caches and scratch files
+target/
+tmp/
+temp/
+run/
+dist/
+deploy/
+.cache/
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.app/
+*.dSYM/
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.dmg
+*.msi
+
+# Private notes, local instructions, editor state and backups
+docs/
+AGENTS.md
+agent.md
+CLAUDE.md
+.agents/
+.codex/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+*.bak
