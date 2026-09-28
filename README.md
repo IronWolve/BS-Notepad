@@ -6,7 +6,7 @@
 <p align="center">A quiet desktop workspace for notes, Markdown, source files, and images.</p>
 <p align="center">Windows · Linux · macOS</p>
 
-![Markdown workspace with tabs, file explorer, and document map](assets/screenshots/workspace.png)
+![Single-document reading view with the file browser closed and no tabs](assets/screenshots/workspace.png)
 
 Read a document, switch to its source, and edit it in the same window. BS Notepad keeps the controls subtle, your files close by, and the colors your own.
 
@@ -83,7 +83,8 @@ The build scripts expect a checkout named `repo` inside a project directory. Out
 bs-notepad/
 ├── repo/       # this repository
 ├── tmp/        # compilation, caches, and test output
-└── deploy/     # built application packages
+├── deploy/     # built application files
+└── dists/      # reviewed distribution ZIPs and checksums
 ```
 
 Clone your chosen repository URL into that layout:
@@ -147,6 +148,18 @@ CARGO_TARGET_DIR="$PWD/tmp/target" TMPDIR="$PWD/tmp/build" \
 ```
 
 `repo/scripts/check-ui.sh` exercises the exported interface and image viewers with `agent-browser`. `repo/scripts/check-portable.sh` checks a built Linux application on a virtual display and requires Xvfb. These tools must already be installed; the scripts do not install them.
+
+### Distribution archives
+
+After building, package only the approved application files:
+
+```sh
+python3 repo/scripts/package-release.py linux
+python3 repo/scripts/package-release.py windows
+python3 repo/scripts/package-release.py macos --macos-archive deploy/macos/bs-notepad-0.7.4-arm64.zip
+```
+
+The packager writes ZIPs and SHA-256 checksums to `dists/` outside Git. It uses explicit file manifests, checks for development home paths, and omits host archive metadata. Use `--private-marker` to reject additional private text. Settings, recovery files, logs, and browser profiles are never part of these packages. The supplied Linux package requires glibc 2.39 or newer in addition to its GUI libraries.
 
 ## Project
 
