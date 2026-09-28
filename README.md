@@ -35,7 +35,7 @@ Open a file with **Ctrl+O**, or choose a folder with **Ctrl+Shift+O**. Dragging 
 
 The main menu is at the upper left. Files and the theme picker sit beside it. Find, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
 
-The source repository does not contain compiled applications. Application packages are distributed separately as ZIP archives.
+[Download the latest release](https://github.com/IronWolve/bs-notepad/releases/latest) for Windows, macOS, or Linux. ZIP packages include checksums, the project copyright notice, and third-party notices. Compiled applications are distributed separately from this source repository.
 
 | Platform | Running a built package |
 | --- | --- |
