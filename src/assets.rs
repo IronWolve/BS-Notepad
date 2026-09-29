@@ -220,7 +220,7 @@ pub fn serve(uri: &str) -> (Vec<u8>, &'static str, u16) {
     let decoded = decode(path_part.split('?').next().unwrap_or(""));
     if decoded.trim_start_matches('/') == "__ui/logo.png" {
         return (
-            include_bytes!("../assets/brand.png").to_vec(),
+            include_bytes!("../pics/brand.png").to_vec(),
             "image/png",
             200,
         );

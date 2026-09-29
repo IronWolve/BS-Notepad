@@ -1,18 +1,20 @@
-# Track only reviewed application source, required assets, and public notices.
-# Build inputs, tests, tools, and dependency support files remain local.
+# GitHub: reviewed source, pictures, and license notices only.
+# README.md and .gitignore are the only files tracked at the Git root.
 /*
 !/.gitignore
-!/COPYRIGHT
 !/README.md
-!/THIRD-PARTY-NOTICES.txt
-!/assets/
-/assets/*
-!/assets/brand.png
-!/assets/screenshots/
-/assets/screenshots/*
-!/assets/screenshots/images.png
-!/assets/screenshots/themes.png
-!/assets/screenshots/workspace.png
+!/licenses/
+/licenses/*
+!/licenses/COPYRIGHT
+!/licenses/THIRD-PARTY-NOTICES.txt
+!/pics/
+/pics/*
+!/pics/brand.png
+!/pics/screenshots/
+/pics/screenshots/*
+!/pics/screenshots/images.png
+!/pics/screenshots/themes.png
+!/pics/screenshots/workspace.png
 !/src/
 /src/*
 !/src/assets.rs
@@ -39,15 +41,18 @@
 !/src/ui.rs
 !/src/workspace.js
 
-# Local build, test, and dependency support files.
+# Local build and test inputs are not part of the public checkout.
 /.cargo/
-/Cargo.toml
-/Cargo.lock
-/build.rs
+/Cargo.*
+/build.*
 /scripts/
 /tests/
 /tools/
 /third-party/
+/thirdparty/
+/assets/
+/COPYRIGHT
+/THIRD-PARTY-NOTICES.txt
 /src/tests.rs
 /src/smoke.js
 

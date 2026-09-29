@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="assets/brand.png" width="112" alt="BS logo">
+  <img src="pics/brand.png" width="112" alt="BS logo">
 </p>
 
 <h1 align="center">BS Notepad</h1>
 <p align="center">A quiet desktop workspace for notes, Markdown, source files, and images.</p>
 <p align="center">Windows · Linux · macOS</p>
 
-![Long document with a full right-hand preview, the file browser closed, and no tabs](assets/screenshots/workspace.png)
+![Long document with a full right-hand preview, the file browser closed, and no tabs](pics/screenshots/workspace.png)
 
 Read a document, switch to its source, and edit it in the same window. BS Notepad keeps the controls subtle, your files close by, and the colors your own.
 
@@ -21,11 +21,11 @@ Read a document, switch to its source, and edit it in the same window. BS Notepa
 
 ### Your colors
 
-![Deep Teal theme with the searchable color picker open](assets/screenshots/themes.png)
+![Deep Teal theme with the searchable color picker open](pics/screenshots/themes.png)
 
 ### Pictures belong in the notebook
 
-![Image viewer in the dark theme with a magnifying lens](assets/screenshots/images.png)
+![Image viewer in the dark theme with a magnifying lens](pics/screenshots/images.png)
 
 Screenshots show the app's actual interface in a browser test fixture with sample content. Fonts and native window behavior can vary by platform.
 
@@ -35,7 +35,7 @@ Open a file with **Ctrl+O**, or choose a folder with **Ctrl+Shift+O**. Dragging 
 
 The main menu is at the upper left. Files and the theme picker sit beside it. Find, Outline, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
 
-[Download the latest release](https://github.com/IronWolve/bs-notepad/releases/latest) for Windows, macOS, or Linux. ZIP packages include checksums, the project copyright notice, and third-party notices. Compiled applications are distributed separately from this source repository. The public checkout contains application source, required assets, and notices; local build manifests, build scripts, tools, and tests are not included, so it is not a standalone buildable checkout.
+[Download the latest release](https://github.com/IronWolve/bs-notepad/releases/latest) for Windows, macOS, or Linux. ZIP packages include checksums, the project copyright notice, and third-party notices. Compiled applications are distributed separately from this source repository. The public checkout keeps application source in `src/`, pictures in `pics/`, and copyright notices in `licenses/`, with this README at the repository root; local build manifests, build scripts, tools, and tests are not included, so it is not a standalone buildable checkout.
 
 | Platform | Running a built package |
 | --- | --- |
@@ -83,4 +83,4 @@ Maintained by [IronWolve](https://github.com/IronWolve). When reporting a bug, i
 
 Copyright © 2026 IronWolve. All rights reserved. No license is currently granted for the original project code. Third-party components remain subject to their respective licenses.
 
-See [COPYRIGHT](COPYRIGHT) for the project notice and [third-party notices](THIRD-PARTY-NOTICES.txt) for dependency and bundled-asset licenses. The unmodified MPL-2.0 component's source and license are included in the [release ZIPs](https://github.com/IronWolve/bs-notepad/releases/latest), alongside the other required third-party license materials. These third-party permissions are not restricted by the project's copyright notice.
+See [COPYRIGHT](licenses/COPYRIGHT) for the project notice and [third-party notices](licenses/THIRD-PARTY-NOTICES.txt) for dependency and bundled-asset licenses. The unmodified MPL-2.0 component's source and license are included in the [release ZIPs](https://github.com/IronWolve/bs-notepad/releases/latest), alongside the other required third-party license materials. These third-party permissions are not restricted by the project's copyright notice.
