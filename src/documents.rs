@@ -55,7 +55,9 @@ impl Document {
         }
     }
     pub fn loaded(path: PathBuf, loaded: crate::storage::Loaded) -> Self {
-        let mut doc = Self::new(None, loaded.source);
+        let mut doc = Self::new(None, String::new());
+        doc.saved_source = loaded.source.clone();
+        doc.source = loaded.source;
         doc.path = Some(path);
         doc.seen_mtime = loaded.modified;
         doc.format = loaded.format;
@@ -75,6 +77,10 @@ impl Document {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| format!("Untitled {}", self.id))
     }
+    pub fn accepts_save(&self, text: &str) -> bool {
+        !self.read_only && text == self.source
+    }
+
     pub fn edit(&mut self, source: String) {
         self.source = source;
         self.dirty = self.source != self.saved_source;

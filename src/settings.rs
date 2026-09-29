@@ -117,6 +117,8 @@ pub struct Settings {
     /// Above this size a file opens as plain text instead of being parsed.
     pub plain_text_above_mb: u32,
     pub restore_last_file: bool,
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 impl Default for Settings {
@@ -129,7 +131,7 @@ impl Default for Settings {
             theme_favorites: Vec::new(),
             log_retention_days: 30,
             backup_retention: 3,
-            settings_version: 1,
+            settings_version: 2,
             workspace: String::new(),
             expanded_folders: Vec::new(),
             tree_scroll: 0.0,
@@ -178,6 +180,7 @@ impl Default for Settings {
             highlight_limit_kb: 256,
             plain_text_above_mb: 10,
             restore_last_file: true,
+            extra: Default::default(),
         }
     }
 }
@@ -187,31 +190,93 @@ impl Settings {
         root.join("settings.json")
     }
 
+    fn decode(raw: &str) -> Result<(Self, Vec<String>, u64), serde_json::Error> {
+        let value: serde_json::Value =
+            serde_json::from_str(raw.strip_prefix('\u{feff}').unwrap_or(raw))?;
+        let mut input = value
+            .as_object()
+            .cloned()
+            .ok_or_else(|| serde::de::Error::custom("Preferences must be an object"))?;
+        let version = input
+            .get("settings_version")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let defaults = serde_json::to_value(Self::default())?;
+        let defaults = defaults.as_object().unwrap();
+        let mut invalid = Vec::new();
+        for (key, value) in input.clone() {
+            if !defaults.contains_key(&key) {
+                continue;
+            }
+            let mut probe = serde_json::Map::new();
+            probe.insert(key.clone(), value);
+            if serde_json::from_value::<Self>(serde_json::Value::Object(probe)).is_err() {
+                input.insert(key.clone(), defaults[&key].clone());
+                invalid.push(key);
+            }
+        }
+        let settings = serde_json::from_value(serde_json::Value::Object(input))?;
+        Ok((settings, invalid, version))
+    }
+
     pub fn load(root: &Path) -> Self {
         let target = Self::file(root);
-        let raw = std::fs::read_to_string(&target).unwrap_or_default();
-        let mut settings: Self = match serde_json::from_str(&raw) {
-            Ok(settings) => settings,
-            Err(_) if target.exists() => {
-                let mut recovered = std::fs::read(target.with_extension("json.bak"))
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
-                    .unwrap_or_default();
-                let stamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos();
-                let preserved = root.join(format!("settings.corrupt-{}.json", stamp));
-                recovered.blocked_write = std::fs::rename(&target, &preserved).is_err();
-                recovered.load_warning=if recovered.blocked_write {"Settings could not be read or preserved. Saving preferences is disabled until folder access is restored."}else{"Damaged settings were preserved; preferences were recovered from backup where available."}.into();
-                recovered
+        let raw = match std::fs::read_to_string(&target) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+            Err(error) => {
+                return Self {
+                    blocked_write: true,
+                    load_warning: format!(
+                        "Preferences could not be read; saving them is disabled: {}",
+                        error
+                    ),
+                    ..Self::default()
+                };
             }
-            Err(_) => Self::default(),
         };
-        // Make formerly hidden controls discoverable once when upgrading.
-        if !raw.contains("\"settings_version\"") {
+        let (mut settings, invalid, version, recovered) = match Self::decode(&raw) {
+            Ok((settings, invalid, version)) => (settings, invalid, version, false),
+            Err(_) => {
+                let backup = std::fs::read_to_string(target.with_extension("json.bak"))
+                    .ok()
+                    .and_then(|raw| Self::decode(&raw).ok());
+                let (settings, invalid, version) =
+                    backup.unwrap_or_else(|| (Self::default(), Vec::new(), 2));
+                (settings, invalid, version, true)
+            }
+        };
+        if version > 2 {
+            settings.blocked_write = true;
+            settings.load_warning="These preferences were written by a newer app. They will not be overwritten by this version.".into();
+        } else if recovered || !invalid.is_empty() {
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let preserved = root.join(format!(
+                "settings.corrupt-{}-{}.json",
+                std::process::id(),
+                stamp
+            ));
+            settings.blocked_write = std::fs::rename(&target, &preserved).is_err();
+            settings.load_warning = if settings.blocked_write {
+                "Preferences could not be preserved. Saving them is disabled until folder access is restored.".into()
+            } else if recovered {
+                "Damaged preferences were preserved; valid backup choices were restored where available.".into()
+            } else {
+                format!(
+                    "Invalid preference values were preserved; only these fields were reset: {}",
+                    invalid.join(", ")
+                )
+            };
+        }
+        if version == 0 {
             settings.chrome = "always".into();
             settings.sidebar = "always".into();
+        }
+        if version <= 2 {
+            settings.settings_version = 2;
         }
         settings.normalize();
         settings
@@ -231,6 +296,17 @@ impl Settings {
     }
 
     pub fn normalize(&mut self) {
+        if !self.line_height.is_finite() {
+            self.line_height = 1.65;
+        }
+        if !self.zoom.is_finite() {
+            self.zoom = 1.0;
+        }
+        self.last_scroll = if self.last_scroll.is_finite() {
+            self.last_scroll.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         self.window_width = self.window_width.clamp(620, 7680);
         self.window_height = self.window_height.clamp(400, 4320);
         self.log_retention_days = self.log_retention_days.clamp(1, 365);
@@ -254,6 +330,16 @@ impl Settings {
             self.icon_style = "soft".into();
         }
         for tab in &mut self.saved_tabs {
+            tab.scroll = if tab.scroll.is_finite() {
+                tab.scroll.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            tab.editor_scroll = if tab.editor_scroll.is_finite() {
+                tab.editor_scroll.clamp(0.0, 100_000_000.0)
+            } else {
+                0.0
+            };
             if let Some(view) = &mut tab.image_view {
                 view.normalize();
             }
@@ -321,10 +407,13 @@ impl Settings {
         let target = Self::file(root);
         if let Ok(previous) = std::fs::read(&target) {
             if serde_json::from_slice::<Self>(&previous).is_ok() {
-                crate::storage::write_atomic(&target.with_extension("json.bak"), &previous)?;
+                crate::storage::write_private_atomic(
+                    &target.with_extension("json.bak"),
+                    &previous,
+                )?;
             }
         }
-        crate::storage::write_atomic(&target, &serde_json::to_vec_pretty(self)?)
+        crate::storage::write_private_atomic(&target, &serde_json::to_vec_pretty(self)?)
     }
 
     pub fn remember(&mut self, path: &Path) {
@@ -333,6 +422,51 @@ impl Settings {
         self.recents.insert(0, text.clone());
         self.recents.truncate(RECENT_MAX);
         self.last_path = text;
+    }
+
+    pub fn editable_key(key: &str) -> bool {
+        matches!(
+            key,
+            "theme"
+                | "theme_favorites"
+                | "text_contrast"
+                | "heading_styles"
+                | "tab_shape"
+                | "tab_highlight"
+                | "icon_style"
+                | "icon_visibility"
+                | "chrome"
+                | "zoom"
+                | "ui_font"
+                | "body_font"
+                | "code_font"
+                | "ui_size"
+                | "files_size"
+                | "body_size"
+                | "code_size"
+                | "line_height"
+                | "ligatures"
+                | "sidebar"
+                | "sidebar_width"
+                | "sidebar_tab"
+                | "show_hidden"
+                | "restore_last_file"
+                | "restore_tabs"
+                | "close_to_tray"
+                | "log_retention_days"
+                | "backup_retention"
+                | "word_wrap"
+                | "tab_size"
+                | "tab_style"
+                | "continue_lists"
+                | "minimap"
+                | "status_bar"
+                | "view_mode"
+                | "syntax_colour"
+                | "highlight_limit_kb"
+                | "plain_text_above_mb"
+                | "remote_images"
+        )
     }
 
     /// Every field with its default, for the options panel.

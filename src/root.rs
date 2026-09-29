@@ -53,3 +53,24 @@ mod tests {
         assert_eq!(data_root(&root.join("editor")), root);
     }
 }
+
+/// Test hooks require a private build and an explicit token in its disposable data root.
+pub fn smoke_authorized(root: &std::path::Path) -> bool {
+    #[cfg(feature = "smoke")]
+    {
+        let Ok(token) = std::env::var("SMOKE_TEST_TOKEN") else {
+            return false;
+        };
+        token.len() >= 32
+            && token.bytes().all(|b| b.is_ascii_hexdigit())
+            && std::fs::read_to_string(root.join(".smoke-token"))
+                .ok()
+                .as_deref()
+                == Some(token.as_str())
+    }
+    #[cfg(not(feature = "smoke"))]
+    {
+        let _ = root;
+        false
+    }
+}

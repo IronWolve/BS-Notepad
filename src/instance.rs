@@ -99,7 +99,7 @@ where
             .unwrap_or_default()
             .as_nanos()
     );
-    crate::storage::write_atomic(
+    crate::storage::write_private_atomic(
         &root.join("instance.port"),
         &serde_json::to_vec(&Endpoint {
             port: listener.local_addr()?.port(),

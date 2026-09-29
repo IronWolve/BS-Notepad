@@ -7,8 +7,76 @@ static SCOPE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 pub fn set_scope(dir: Option<&Path>) {
     if let Ok(mut scope) = SCOPE.lock() {
-        *scope = dir.map(PathBuf::from);
+        *scope = dir.and_then(|path| path.canonicalize().ok());
     }
+}
+
+/// Normalize dot segments without asking the filesystem to resolve a path.
+fn lexical(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !matches!(result.components().next_back(), Some(Component::Normal(_))) {
+                    return None;
+                }
+                result.pop();
+            }
+            _ => result.push(component.as_os_str()),
+        }
+    }
+    Some(result)
+}
+
+pub fn scoped_image_path(path: &Path, scope: &Path) -> Option<PathBuf> {
+    let path = lexical(path)?;
+    let scope = lexical(scope)?;
+    image_type(&path)?;
+    crate::workspace_files::rebase(&path, &scope, &scope)
+}
+
+fn resolve_scoped_image(path: &Path, scope: &Path) -> Option<PathBuf> {
+    let mut path = scoped_image_path(path, scope)?;
+    for _ in 0..40 {
+        let parts: Vec<_> = path.strip_prefix(scope).ok()?.components().collect();
+        let mut current = scope.to_path_buf();
+        let mut redirect = None;
+        for (index, part) in parts.iter().enumerate() {
+            current.push(part.as_os_str());
+            let meta = std::fs::symlink_metadata(&current).ok()?;
+            let linked = meta.file_type().is_symlink();
+            #[cfg(target_os = "windows")]
+            let linked = {
+                use std::os::windows::fs::MetadataExt;
+                linked || meta.file_attributes() & 0x400 != 0
+            };
+            if linked {
+                let target = std::fs::read_link(&current).ok()?;
+                let mut target = if target.is_absolute() {
+                    target
+                } else {
+                    current.parent()?.join(target)
+                };
+                for remainder in &parts[index + 1..] {
+                    target.push(remainder.as_os_str());
+                }
+                // Validate the link target without resolving it or contacting another host.
+                redirect = Some(scoped_image_path(&target, scope)?);
+                break;
+            }
+            if index + 1 == parts.len() && !meta.is_file() {
+                return None;
+            }
+        }
+        if let Some(next) = redirect {
+            path = next;
+        } else {
+            return Some(path);
+        }
+    }
+    None
 }
 
 fn encode(text: &str) -> String {
@@ -18,7 +86,6 @@ fn encode(text: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
                 out.push(*byte as char)
             }
-            b'\\' => out.push('/'),
             other => out.push_str(&format!("%{:02X}", other)),
         }
     }
@@ -51,8 +118,11 @@ fn escape(text: &str) -> String {
 }
 pub fn fragment(value: &str) -> String {
     let decoded = decode(value.trim_start_matches('#'));
-    if decoded.starts_with("doc-heading-") || decoded.starts_with("fn") {
-        decoded
+    let decoded = decoded.strip_prefix("user-content-").unwrap_or(&decoded);
+    if decoded.is_empty() {
+        "doc-top".into()
+    } else if decoded.starts_with("doc-heading-") || decoded.starts_with("doc-footnote-") {
+        decoded.into()
     } else {
         format!("doc-heading-{}", decoded)
     }
@@ -63,10 +133,17 @@ pub fn local_target(value: &str, base: Option<&Path>) -> Option<(String, String)
         return None;
     }
     if let Some((scheme, rest)) = value.split_once(':') {
-        if !(scheme.len() == 1
+        let uri_scheme = scheme
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphabetic)
+            && scheme
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"+-.".contains(&b));
+        let drive = scheme.len() == 1
             && scheme.as_bytes()[0].is_ascii_alphabetic()
-            && (rest.starts_with('/') || rest.starts_with('\\')))
-        {
+            && (rest.starts_with('/') || rest.starts_with('\\'));
+        if uri_scheme && !drive {
             return None;
         }
     }
@@ -78,10 +155,10 @@ pub fn local_target(value: &str, base: Option<&Path>) -> Option<(String, String)
     };
     Some((
         resolve(&decode(path), base),
-        if anchor.is_empty() {
-            String::new()
-        } else {
+        if value.contains('#') {
             fragment(anchor)
+        } else {
+            String::new()
         },
     ))
 }
@@ -127,7 +204,8 @@ pub fn image_url(value: &str, base: Option<&Path>, remote: bool) -> Option<Strin
         .then(|| value.to_string());
     }
     let (path, _) = local_target(value, base)?;
-    Some(url_for(&path, None))
+    let path = scoped_image_path(Path::new(&path), base?)?;
+    Some(url_for(&path.to_string_lossy(), None))
 }
 
 /// Turns a reference in a document into an absolute path.
@@ -159,6 +237,8 @@ fn asset_url(path: &str, windows: bool) -> String {
         format!("//{}", rest.replace('\\', "/"))
     } else if let Some(rest) = path.strip_prefix(r"\\?\") {
         rest.replace('\\', "/")
+    } else if windows {
+        path.replace('\\', "/")
     } else {
         path.to_string()
     };
@@ -250,10 +330,22 @@ pub fn serve(uri: &str) -> (Vec<u8>, &'static str, u16) {
     let Some(scope) = scope else {
         return (b"no document open".to_vec(), "text/plain", 403);
     };
-    let (Ok(real), Ok(scope_real)) = (candidate.canonicalize(), scope.canonicalize()) else {
+    // No canonicalize/stat/open on a document-supplied path until its lexical
+    // location is authorized. Reject links/reparse points before following them.
+    let Some(candidate) = scoped_image_path(&candidate, &scope) else {
+        return (b"outside the image scope".to_vec(), "text/plain", 403);
+    };
+    let Some(candidate) = resolve_scoped_image(&candidate, &scope) else {
+        return (
+            b"image path unavailable or outside scope".to_vec(),
+            "text/plain",
+            403,
+        );
+    };
+    let Ok(real) = candidate.canonicalize() else {
         return (b"not found".to_vec(), "text/plain", 404);
     };
-    if !real.starts_with(&scope_real) {
+    if !real.starts_with(&scope) {
         // Outside the document's folder: refused rather than served.
         return (b"outside the document folder".to_vec(), "text/plain", 403);
     }
@@ -297,7 +389,7 @@ pub fn worker_pool() -> std::sync::mpsc::Sender<(String, wry::RequestAsyncRespon
                 wry::http::Response::builder()
                     .status(status)
                     .header("Content-Type", mime)
-                    .header("Access-Control-Allow-Origin", "*")
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(body)
                     .unwrap(),
             );

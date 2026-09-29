@@ -1,5 +1,19 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, PartialEq)]
+pub enum Choice {
+    Restore,
+    Discard,
+    Later,
+}
+pub fn choice(result: crate::dialogs::MessageDialogResult) -> Choice {
+    match result {
+        crate::dialogs::MessageDialogResult::Custom(label) if label == "Restore" => Choice::Restore,
+        crate::dialogs::MessageDialogResult::Custom(label) if label == "Discard" => Choice::Discard,
+        _ => Choice::Later,
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Draft {
     pub path: Option<PathBuf>,
@@ -28,7 +42,7 @@ pub fn write(root: &Path, key: &str, draft: Option<&Draft>) -> std::io::Result<(
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{}.json", key));
     if let Some(draft) = draft {
-        crate::storage::write_atomic(&path, &serde_json::to_vec(draft)?)
+        crate::storage::write_private_atomic(&path, &serde_json::to_vec(draft)?)
     } else {
         match std::fs::remove_file(path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),

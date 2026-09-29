@@ -20,6 +20,7 @@
 /src/*
 !/src/assets.rs
 !/src/editing.js
+!/src/dialogs.rs
 !/src/documents.rs
 !/src/find.js
 !/src/fonts.rs

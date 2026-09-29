@@ -42,27 +42,74 @@ fn escape(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn anchor_for(text: &str, used: &mut Vec<String>) -> String {
+fn anchor_for(text: &str, used: &mut std::collections::HashMap<String, usize>) -> String {
+    static CATEGORIES: std::sync::LazyLock<Vec<regex_syntax::hir::ClassUnicodeRange>> =
+        std::sync::LazyLock::new(|| {
+            match regex_syntax::Parser::new().parse(r"[\p{L}\p{M}\p{N}\p{Pc}]") {
+                Ok(hir) => match hir.kind() {
+                    regex_syntax::hir::HirKind::Class(regex_syntax::hir::Class::Unicode(class)) => {
+                        class.ranges().to_vec()
+                    }
+                    _ => Vec::new(),
+                },
+                Err(_) => Vec::new(),
+            }
+        });
     let base: String = text
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .filter_map(|c| {
+            if c == ' ' {
+                return Some('-');
+            }
+            if c == '-'
+                || CATEGORIES
+                    .binary_search_by(|range| {
+                        if c < range.start() {
+                            std::cmp::Ordering::Greater
+                        } else if c > range.end() {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Equal
+                        }
+                    })
+                    .is_ok()
+            {
+                Some(c)
+            } else {
+                None
+            }
+        })
         .collect();
-    let base = base.trim_matches('-').to_string();
-    let base = if base.is_empty() {
-        "section".into()
-    } else {
-        base
-    };
-    let base = format!("doc-heading-{}", base);
+    let base = format!(
+        "doc-heading-{}",
+        if base.is_empty() { "section" } else { &base }
+    );
     let mut candidate = base.clone();
-    let mut n = 2;
-    while used.contains(&candidate) {
-        candidate = format!("{}-{}", base, n);
-        n += 1;
+    if let Some(previous) = used.get(&base).copied() {
+        let mut suffix = previous + 1;
+        loop {
+            candidate = format!("{}-{}", base, suffix);
+            if !used.contains_key(&candidate) {
+                break;
+            }
+            suffix += 1;
+        }
+        used.insert(base, suffix);
     }
-    used.push(candidate.clone());
+    used.entry(candidate.clone()).or_insert(0);
     candidate
+}
+
+fn footnote_id(
+    name: &str,
+    labels: &mut std::collections::HashMap<unicase::UniCase<String>, String>,
+) -> String {
+    let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    labels
+        .entry(unicase::UniCase::new(normalized.clone()))
+        .or_insert_with(|| format!("doc-footnote-{}", normalized.to_lowercase()))
+        .clone()
 }
 
 fn level_number(level: HeadingLevel) -> u8 {
@@ -213,13 +260,18 @@ impl Renderer {
     /// turns into a rule and a mangled heading.
     fn split_front_matter(text: &str) -> (String, &str) {
         let first = text.lines().next().unwrap_or("");
-        if first != "---" {
+        let first = first.strip_prefix('\u{feff}').unwrap_or(first).trim_end();
+        if !["---", "+++"].contains(&first) {
             return (String::new(), text);
         }
         let start = text.find('\n').map(|i| i + 1).unwrap_or(text.len());
+        if text[start..].lines().next().unwrap_or("").trim().is_empty() {
+            return (String::new(), text);
+        }
         let mut offset = start;
         for line in text[start..].split_inclusive('\n') {
-            if line.trim_end_matches(['\r', '\n']) == "---" {
+            let delimiter = line.trim_end();
+            if delimiter == first || first == "---" && delimiter == "..." {
                 return (
                     text[start..offset].trim_end_matches(['\r', '\n']).into(),
                     &text[offset + line.len()..],
@@ -301,9 +353,17 @@ impl Renderer {
             .map(|(_, events)| events.clone());
         let parsed = cached.unwrap_or_else(|| {
             std::sync::Arc::new(
-                Parser::new_ext(body_text, Options::all())
-                    .map(Event::into_static)
-                    .collect::<Vec<_>>(),
+                Parser::new_ext(
+                    body_text,
+                    Options::ENABLE_TABLES
+                        | Options::ENABLE_FOOTNOTES
+                        | Options::ENABLE_STRIKETHROUGH
+                        | Options::ENABLE_TASKLISTS
+                        | Options::ENABLE_GFM
+                        | Options::ENABLE_DEFINITION_LIST,
+                )
+                .map(Event::into_static)
+                .collect::<Vec<_>>(),
             )
         });
         if body_text.len() <= 4 * 1024 * 1024 {
@@ -330,7 +390,10 @@ impl Renderer {
         let parser = parsed.iter().cloned();
         let mut events: Vec<Event> = Vec::new();
         let mut outline: Vec<Heading> = Vec::new();
-        let mut used_anchors: Vec<String> = Vec::new();
+        let mut used_anchors = std::collections::HashMap::new();
+        let mut footnotes = std::collections::HashMap::new();
+        let mut html_block: Option<String> = None;
+        let mut nested_images = 0usize;
 
         let mut code = String::new();
         let mut language: Option<String> = None;
@@ -347,15 +410,60 @@ impl Renderer {
                 };
             }
             match event {
+                Event::Start(Tag::HtmlBlock) => {
+                    html_block = Some(String::new());
+                }
+                Event::End(TagEnd::HtmlBlock) => {
+                    if let Some(raw) = html_block.take() {
+                        events.push(Event::Html(
+                            crate::formatting::html_with_options(
+                                &raw,
+                                base,
+                                settings.remote_images,
+                            )
+                            .into(),
+                        ));
+                    }
+                }
+                Event::Html(raw) if html_block.is_some() => {
+                    html_block.as_mut().unwrap().push_str(&raw);
+                }
+                Event::Start(Tag::BlockQuote(Some(kind))) => {
+                    let label = match kind {
+                        pulldown_cmark::BlockQuoteKind::Note => "Note",
+                        pulldown_cmark::BlockQuoteKind::Tip => "Tip",
+                        pulldown_cmark::BlockQuoteKind::Important => "Important",
+                        pulldown_cmark::BlockQuoteKind::Warning => "Warning",
+                        pulldown_cmark::BlockQuoteKind::Caution => "Caution",
+                    };
+                    events.push(Event::Html(
+                        format!("<blockquote><p class=\"callout-label\">{label}</p>").into(),
+                    ));
+                }
                 Event::Start(Tag::FootnoteDefinition(name)) => events.push(Event::Start(
-                    Tag::FootnoteDefinition(format!("doc-footnote-{}", name).into()),
+                    Tag::FootnoteDefinition(footnote_id(&name, &mut footnotes).into()),
                 )),
-                Event::FootnoteReference(name) => events.push(Event::FootnoteReference(
-                    format!("doc-footnote-{}", name).into(),
-                )),
+                Event::FootnoteReference(name) => {
+                    if let Some((_, _, alt)) = image.as_mut() {
+                        alt.push_str(&name);
+                    } else {
+                        events.push(Event::FootnoteReference(
+                            footnote_id(&name, &mut footnotes).into(),
+                        ));
+                    }
+                }
                 Event::Start(Tag::CodeBlock(kind)) => {
                     language = Some(match kind {
-                        CodeBlockKind::Fenced(name) => name.to_string(),
+                        CodeBlockKind::Fenced(name) => name
+                            .split_ascii_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .split(',')
+                            .next()
+                            .unwrap_or("")
+                            .trim_matches(['{', '}'])
+                            .trim_start_matches('.')
+                            .to_string(),
                         CodeBlockKind::Indented => String::new(),
                     });
                     code.clear();
@@ -387,9 +495,17 @@ impl Renderer {
                 Event::Start(Tag::Image {
                     dest_url, title, ..
                 }) => {
-                    image = Some((dest_url.to_string(), title.to_string(), String::new()));
+                    if image.is_some() {
+                        nested_images += 1;
+                    } else {
+                        image = Some((dest_url.to_string(), title.to_string(), String::new()));
+                    }
                 }
                 Event::End(TagEnd::Image) => {
+                    if nested_images > 0 {
+                        nested_images -= 1;
+                        continue;
+                    }
                     if let Some((src, title, alt)) = image.take() {
                         // Relative paths are resolved here and served through
                         // the app's own scoped protocol; an HTML string has no
@@ -421,12 +537,25 @@ impl Renderer {
                     }
                 }
                 Event::Start(Tag::Link {
-                    dest_url, title, ..
+                    link_type,
+                    dest_url,
+                    title,
+                    ..
                 }) => {
-                    let tag = assets::link_html(&dest_url, &title, base);
-                    events.push(Event::Html(tag.into()));
+                    if image.is_none() {
+                        let url = if link_type == pulldown_cmark::LinkType::Email {
+                            format!("mailto:{}", dest_url)
+                        } else {
+                            dest_url.to_string()
+                        };
+                        events.push(Event::Html(assets::link_html(&url, &title, base).into()));
+                    }
                 }
-                Event::End(TagEnd::Link) => events.push(Event::Html("</a>".into())),
+                Event::End(TagEnd::Link) => {
+                    if image.is_none() {
+                        events.push(Event::Html("</a>".into()));
+                    }
+                }
 
                 Event::Text(text) => {
                     if language.is_some() {

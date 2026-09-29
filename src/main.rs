@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod assets;
+mod dialogs;
 mod documents;
 mod fonts;
 mod formatting;
@@ -380,6 +381,10 @@ impl App {
     }
 
     fn quit(&mut self, control_flow: &mut ControlFlow) {
+        if self.file_request.is_some() {
+            self.notify("A file operation is still finishing. Please try Quit again afterward.");
+            return;
+        }
         self.show();
         let original = self.id;
         let dirty: Vec<u64> = self
@@ -441,7 +446,7 @@ impl App {
             "dirty": self.dirty,
             "imageView": self.image_view,
             "image":self.image.as_ref().and_then(|image|self.path.as_ref().map(|path|json!({"format":image.format,"bytes":image.bytes,"url":format!("{}?image={}-{}",assets::url_for(&path.to_string_lossy(),None),self.id,self.seen_mtime.and_then(|time|time.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_nanos()).unwrap_or(0))}))),
-            "encoding": self.format.encoding, "lineEnding":self.format.ending, "readOnly":self.read_only, "externalChanged":self.external_changed,
+            "encoding": self.format.encoding, "lineEnding":self.format.label(), "readOnly":self.read_only, "externalChanged":self.external_changed,
             "generation":self.generation,
             "name": name,
             "path": self.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
@@ -626,7 +631,7 @@ impl App {
     }
 
     fn pick_and_open(&mut self) {
-        let mut dialog = rfd::FileDialog::new()
+        let mut dialog = crate::dialogs::FileDialog::new()
             .add_filter("Markdown", &["md", "markdown", "mdown", "mkd", "mkdn"])
             .add_filter(
                 "Text and source",
@@ -655,6 +660,10 @@ impl App {
     }
 
     fn save(&mut self, text: String, save_as: bool) -> bool {
+        if self.file_request.is_some() {
+            self.notify("A file operation is still finishing. Please try Save again afterward.");
+            return false;
+        }
         if self.read_only {
             self.notify(if self.image.is_some() {
                 "Images are view-only and cannot be overwritten by the text editor."
@@ -663,10 +672,14 @@ impl App {
             });
             return false;
         }
+        if !self.documents.current().accepts_save(&text) {
+            self.notify("Save refused: the editor is still synchronizing. Your file was not changed; try Save again when loading finishes.");
+            return false;
+        }
         let path = match self.path.clone().filter(|_| !save_as) {
             Some(p) => p,
             None => {
-                let picked = rfd::FileDialog::new()
+                let picked = crate::dialogs::FileDialog::new()
                     .set_directory(&self.tree_dir)
                     .set_file_name(
                         self.path
@@ -701,12 +714,12 @@ impl App {
                     .fingerprint
                     .is_some_and(|hash| storage::disk_fingerprint(&path).ok() != Some(hash)))
         {
-            let choice = rfd::MessageDialog::new()
+            let choice = crate::dialogs::MessageDialog::new()
                 .set_title("Changed on disk")
                 .set_description("This file changed on disk since it was opened.\n\nOverwrite it?")
-                .set_buttons(rfd::MessageButtons::YesNo)
+                .set_buttons(crate::dialogs::MessageButtons::YesNo)
                 .show();
-            if choice != rfd::MessageDialogResult::Yes {
+            if choice != crate::dialogs::MessageDialogResult::Yes {
                 self.run_js("window.app.note('save cancelled - file changed on disk');".into());
                 return false;
             }
@@ -728,9 +741,19 @@ impl App {
             self.notify("Saved; file content is unchanged.");
             return true;
         }
+        if self.format.mixed {
+            let choice = crate::dialogs::MessageDialog::new().set_title("Mixed line endings")
+                .set_description(format!("This file contains different line endings. Saving these changes will standardize them to {}. Continue?", self.format.ending))
+                .set_buttons(crate::dialogs::MessageButtons::YesNoCancel).show();
+            if choice != crate::dialogs::MessageDialogResult::Yes {
+                self.notify("Save cancelled; original line endings preserved.");
+                return false;
+            }
+        }
         let bytes = self.format.encode(&text);
-        match storage::write_atomic(&path, &bytes) {
-            Ok(()) => {
+        match storage::write_document(&path, &bytes) {
+            Ok(report) => {
+                self.format.mixed = false;
                 self.fingerprint = Some(storage::fingerprint(&bytes));
                 self.external_changed = false;
                 if self.source != text {
@@ -743,15 +766,15 @@ impl App {
                 self.seen_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                 self.dirty = false;
                 self.journal(self.id);
-                self.persist_settings();
                 self.settings.remember(&path);
+                self.persist_settings();
                 log::line(&format!("saved {}", path.display()));
-                self.render_current(0.0);
+                self.render_current(self.scroll);
                 self.send_recents();
                 if new_path {
                     self.send_tree(self.tree_dir.clone());
                 }
-                self.run_js("window.app.note('Saved');".into());
+                self.notify(report.warning.as_deref().unwrap_or("Saved"));
                 true
             }
             Err(e) => {
@@ -766,6 +789,11 @@ impl App {
     }
 
     fn apply_setting(&mut self, key: &str, value: serde_json::Value) {
+        if !Settings::editable_key(key) {
+            self.send_settings();
+            self.notify("That preference cannot be changed through this control.");
+            return;
+        }
         let blocked = self.settings.blocked_write;
         let mut current = serde_json::to_value(&self.settings).unwrap_or(json!({}));
         if let Some(map) = current.as_object_mut() {
@@ -796,6 +824,9 @@ impl App {
                 self.render_current(self.scroll);
             }
             self.persist_settings();
+        } else {
+            self.send_settings();
+            self.notify("That preference value was not valid; the saved value was kept.");
         }
     }
 
@@ -875,16 +906,22 @@ impl App {
                     self.recovery_checked = true;
                     let drafts = recovery::read(&self.root);
                     if !drafts.is_empty() {
-                        let choice = rfd::MessageDialog::new()
-                            .set_title("Recover notes")
-                            .set_description(format!(
-                                "{} unsaved note(s) were found. Restore them?",
-                                drafts.len()
-                            ))
-                            .set_buttons(rfd::MessageButtons::YesNo)
-                            .show();
+                        let choice = recovery::choice(
+                            crate::dialogs::MessageDialog::new()
+                                .set_title("Recover notes")
+                                .set_description(format!(
+                                    "{} unsaved note(s) were found. Restore them?",
+                                    drafts.len()
+                                ))
+                                .set_buttons(crate::dialogs::MessageButtons::YesNoCancelCustom(
+                                    "Restore".into(),
+                                    "Discard".into(),
+                                    "Later".into(),
+                                ))
+                                .show(),
+                        );
                         for (key, draft) in drafts {
-                            if choice == rfd::MessageDialogResult::Yes {
+                            if choice == recovery::Choice::Restore {
                                 let mut doc = Document::new(draft.path, draft.source);
                                 doc.saved_source = draft.saved_source;
                                 doc.format = draft.format;
@@ -893,12 +930,11 @@ impl App {
                                 doc.editing = true;
                                 doc.recovery_key = key;
                                 self.documents.insert(doc);
-                            } else if choice == rfd::MessageDialogResult::No {
+                            } else if choice == recovery::Choice::Discard {
                                 let _ = recovery::write(&self.root, &key, None);
                             }
                         }
-                        if choice == rfd::MessageDialogResult::Yes && self.documents.tabs.len() > 1
-                        {
+                        if choice == recovery::Choice::Restore && self.documents.tabs.len() > 1 {
                             let welcome_id = self.documents.tabs[0].id;
                             self.documents.remove(welcome_id);
                         }
@@ -908,8 +944,15 @@ impl App {
                 if !self.settings.load_warning.is_empty() {
                     self.notify(&self.settings.load_warning);
                 }
+                #[cfg(feature = "smoke")]
                 if self.smoke_started.is_some() {
-                    self.run_js(include_str!("smoke.js").into());
+                    self.run_js(
+                        concat!(
+                            "/* PRIVATE_NATIVE_SMOKE_BUILD_ONLY */",
+                            include_str!("smoke.js")
+                        )
+                        .into(),
+                    );
                 }
             }
             "startupError" => {
@@ -919,6 +962,24 @@ impl App {
                         .get("error")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown")
+                ));
+            }
+            "smokeDialog" if self.smoke_started.is_some() => {
+                self.send_tree(self.tree_dir.clone());
+                let result = crate::dialogs::MessageDialog::new()
+                    .set_title("Recovery dialog test")
+                    .set_description(
+                        "Literal filename: 100% %s %n. Closing this dialog must keep drafts.",
+                    )
+                    .set_buttons(crate::dialogs::MessageButtons::YesNoCancelCustom(
+                        "Restore".into(),
+                        "Discard".into(),
+                        "Later".into(),
+                    ))
+                    .show();
+                self.run_js(format!(
+                    "window.app.smokeDialogResult={};",
+                    json!(format!("{:?}", recovery::choice(result)))
                 ));
             }
             "smokeInspect" if self.smoke_started.is_some() => {
@@ -1083,7 +1144,7 @@ impl App {
             "preview" => self.render_current(self.scroll),
             "open" => self.pick_and_open(),
             "openFolder" => {
-                if let Some(dir) = rfd::FileDialog::new()
+                if let Some(dir) = crate::dialogs::FileDialog::new()
                     .set_directory(&self.tree_dir)
                     .pick_folder()
                 {
@@ -1388,6 +1449,11 @@ impl App {
                 self.settings.tree_scroll = old.tree_scroll;
                 self.settings.tree_filter = old.tree_filter;
                 self.settings.blocked_write = old.blocked_write;
+                self.settings.load_warning = old.load_warning;
+                self.settings.extra = old.extra;
+                if old.settings_version > 2 {
+                    self.settings.settings_version = old.settings_version;
+                }
                 self.settings.last_scroll = old.last_scroll;
                 self.send_tree(self.tree_dir.clone());
                 self.send_settings();
@@ -1410,25 +1476,25 @@ impl App {
         if !self.dirty {
             return true;
         }
-        let choice = rfd::MessageDialog::new()
+        let choice = crate::dialogs::MessageDialog::new()
             .set_title("Unsaved changes")
             .set_description(format!(
                 "Save changes to {} before continuing?",
                 self.name()
             ))
-            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+            .set_buttons(crate::dialogs::MessageButtons::YesNoCancelCustom(
                 "Save".into(),
                 "Discard".into(),
                 "Cancel".into(),
             ))
             .show();
         match choice {
-            rfd::MessageDialogResult::Yes => self.save(self.source.clone(), false),
-            rfd::MessageDialogResult::No => true,
-            rfd::MessageDialogResult::Custom(label) if label == "Save" => {
+            crate::dialogs::MessageDialogResult::Yes => self.save(self.source.clone(), false),
+            crate::dialogs::MessageDialogResult::No => true,
+            crate::dialogs::MessageDialogResult::Custom(label) if label == "Save" => {
                 self.save(self.source.clone(), false)
             }
-            rfd::MessageDialogResult::Custom(label) if label == "Discard" => true,
+            crate::dialogs::MessageDialogResult::Custom(label) if label == "Discard" => true,
             _ => false,
         }
     }
@@ -1651,7 +1717,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tray,
         tree_dir,
         root: root.clone(),
-        smoke_started: std::env::var_os("EXIT_WHEN_READY").map(|_| started),
+        smoke_started: (root::smoke_authorized(&root)
+            && argument
+                .as_ref()
+                .is_some_and(|path| path.starts_with(&root)))
+        .then_some(started),
         settings,
         preview_theme: None,
         render_worker,

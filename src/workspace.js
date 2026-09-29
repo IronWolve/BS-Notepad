@@ -42,13 +42,15 @@ app.applyHeadingStyle=()=>{
  root.setProperty('--heading-shadow',style.shadow?(t?.dark?'0 1px 2px #0005':'0 1px 2px #0002'):'none');
 };
 app.saveHeadingStyle=change=>{
- const id=state.appliedTheme?.id||state.settings.theme,styles={...(state.settings.heading_styles||{})};
+ const id=state.settings.theme,styles={...(state.settings.heading_styles||{})};
  if(change===null)delete styles[id];else styles[id]={...(styles[id]||{}),...change};
  send({cmd:'setting',key:'heading_styles',value:styles});
 };
 
 function wireEditor(node) {
+  node.dataset.ready='false';node.readOnly=true;
   node.oninput = () => {
+    if(node.dataset.ready==='false')return;
     const revision = Number(node.dataset.revision || 0) + 1;
     node.dataset.revision = revision;
     const fromTab=Number(node.dataset.documentId||state.activeTab);
@@ -148,17 +150,26 @@ app.updateTabDirty = dirty => {
   const marker=$('document-tabs').querySelector(`[data-id="${state.activeTab}"] .tab-dirty`);if(marker)marker.hidden=!dirty;
 };
 app.documentAnchor=id=>[...$('article').querySelectorAll('[id]')].find(node=>node.id===id || node.id==='doc-heading-'+id);
+app.goToAnchor=id=>{if(!id||id==='doc-top'){$('doc').scrollTop=0;return true;}const node=app.documentAnchor(id);node?.scrollIntoView({block:'start'});return !!node;};
 app.resendEditor=id=>{const node=editorNodes.get(id);if(node)send({cmd:'edit',fromTab:id,text:node.value,revision:Number(node.dataset.revision)});};
+app.editorReadiness=()=>{
+ const node=$('text'),blocked=state.readOnly||state.image||node.dataset.ready==='false';
+ node.readOnly=!!blocked;$('b-save').disabled=$('b-saveas').disabled=$('b-edit').disabled=$('replace-one').disabled=$('replace-all').disabled=!!blocked;
+ $('editor').setAttribute('aria-busy',String(node.dataset.ready==='false'));
+};
 app.beginDocument=payload=>{
   if(payload.tab===state.activeTab&&payload.revision<Number(editorNodes.get(payload.tab)?.dataset.revision||0))return;
   const keepImage=app.keepEmbeddedImage?.(payload);if(!keepImage)app.closeEmbeddedImage?.(false);
   state.pendingDocument=payload;state.renderPending=true;
   const changed=state.activeTab!==payload.tab||!editorNodes.has(payload.tab);
-  editorFor(payload.tab);if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();}
+  const previousFocus=document.activeElement;
+  if(changed&&payload.editing&&(previousFocus?.tagName==='TEXTAREA'||previousFocus?.closest('#document-tabs')))state.focusEditorAfterLoad=payload.tab;
+  const node=editorFor(payload.tab);if(node._sentText===undefined||payload.revision!==Number(node.dataset.revision))node.dataset.ready='false';
+  if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();delete $('article').dataset.renderKey;app.mapData=null;}
   state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
   app.restoreImageView?.(payload.tab,payload.imageView);
   if(!keepImage)app.setImage?.(payload.image,payload.tab);else app.syncImageControls();
-  app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();
+  app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();app.editorReadiness();
 };
 app.finishDocument=payload=>{
   const pending=state.pendingDocument,node=editorNodes.get(payload.tab);
@@ -177,16 +188,18 @@ app.setDocument = payload => {
   state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;$("text").readOnly=state.readOnly;
   app.restoreImageView?.(id,payload.imageView);
   if(!keepImage)app.setImage?.(payload.image,id);else app.syncImageControls();
-  baseDocument(payload);state.renderRevision=payload.revision??0;
+  const replaced=!payload.renderKey||$('article').dataset.renderKey!==payload.renderKey;
+  baseDocument(payload);state.renderRevision=payload.revision??0;if(replaced)app.mapData=null;
   for(const table of $('article').querySelectorAll('table')) {
     if(table.parentElement.classList.contains('table-scroll'))continue;
     const wrap=document.createElement('div');wrap.className='table-scroll';table.before(wrap);wrap.appendChild(table);
   }
   app.wireEmbeddedImages?.();
-  for(const image of $('article').querySelectorAll('img')) image.addEventListener('load',()=>app.scheduleReaderLayout(),{once:true});
+  for(const image of $('article').querySelectorAll('img')) if(!image.dataset.layoutListener){image.dataset.layoutListener='1';image.addEventListener('load',()=>app.scheduleReaderLayout(),{once:true});}
   app.toggleEdit(payload.editing ?? state.editing,false);
+  app.editorReadiness();
   app.updateStatus?.();
-  if(payload.fragment)requestAnimationFrame(()=>app.documentAnchor(payload.fragment)?.scrollIntoView({block:'start'}));
+  if(payload.fragment)requestAnimationFrame(()=>app.goToAnchor(payload.fragment));
   app.scheduleReaderLayout?.();
   app.scheduleMap();
 };
@@ -195,11 +208,16 @@ app.setEditorText = payload => {
   const node=editorNodes.get(data.tab);if(!node)return;
   if((data.revision||0)<Number(node.dataset.revision||0))return;
   if(node.value!==data.text)node.value=data.text;
-  node.dataset.revision=data.revision||0;node._sentText=node.value;
+  node.dataset.revision=data.revision||0;node._sentText=node.value;node.dataset.ready='true';
+  if(data.tab===state.activeTab)app.editorReadiness();
   const view=pendingViews.get(data.tab);
   if(view) {
-    node.setSelectionRange(view.selectionStart||0,view.selectionEnd||0);node.scrollTop=view.editorScroll||0;
+    node.setSelectionRange(view.selectionStart||0,view.selectionEnd||0);if(node.clientHeight>0)node.scrollTop=view.editorScroll||0;else node._restoreScroll=view.editorScroll||0;
     pendingViews.delete(data.tab);
+  }
+  if(state.focusEditorAfterLoad===data.tab&&data.tab===state.activeTab){
+   state.focusEditorAfterLoad=null;
+   if(!$('options').classList.contains('show')&&!$('help-overlay').classList.contains('show')&&!document.querySelector('dialog[open]')&&(document.activeElement===document.body||document.activeElement===node||document.activeElement?.closest('#document-tabs')))node.focus({preventScroll:true});
   }
   app.updateStatus?.(); app.scheduleMap();
 };
@@ -621,7 +639,8 @@ app.applySettings=settings=>{
  settings={...settings,zoom:Math.round(settings.zoom*100)/100};
  originalSettings(settings);app.favoriteLabel?.();app.updateStatus?.();app.scheduleReaderLayout?.();app.scheduleDialogFit?.();$('minimap').hidden=!!state.image||!settings.minimap;app.syncImageControls?.();$('b-map').classList.toggle('on',!!settings.minimap);$('b-map').setAttribute('aria-pressed',String(!!settings.minimap));app.scheduleMap();};
 const originalTheme=app.applyTheme;app.applyTheme=theme=>{if(theme.id&&theme.id!==(state.previewTheme||state.settings.theme))return;originalTheme(theme);app.scheduleMap();};
-new ResizeObserver(()=>{app.scheduleMap();app.scheduleReaderLayout?.();closeChoices(false);closeMenu(false);}).observe($('content-row'));
+new ResizeObserver(()=>{app.scheduleMap();app.scheduleReaderLayout?.();}).observe($('content-row'));
+window.addEventListener('resize',()=>{closeChoices(false);closeMenu(false);});
 
 app.fitTitle=()=>{
   const bar=$('bar').getBoundingClientRect(),left=$('left-tools').getBoundingClientRect(),right=$('document-actions').getBoundingClientRect();

@@ -114,6 +114,9 @@ article table { border-collapse:collapse; }
 article td,article th { border:1px solid color-mix(in srgb,var(--rule) 60%,var(--bg)); padding:5px 10px; }
 article img { max-width:100%; }
 article h1,article h2,article h3 { line-height:1.3; }
+article .callout-label,article dt { font-weight:650; }
+article dd { margin:0 0 .8em 1.5em; }
+article .footnote-definition { font-size:.9em; margin:.65em 0; }
 article :is(h1,h2,h3,h4,h5,h6) { color:var(--heading-color,var(--fg)); }
 article :is(h1,h2) { text-shadow:var(--heading-shadow,none); }
 .heading-control { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -362,6 +365,8 @@ article th,article td { overflow-wrap:normal; }
 #replace-row button { flex-basis:auto; }
 #document-status { display:flex; gap:16px; justify-content:space-between; font-size:11px; padding:3px 12px; color:var(--dim); }
 #cursor-status { border:0; padding:0; background:transparent; color:inherit; }
+#note { position:fixed; z-index:45; left:50%; bottom:16px; transform:translateX(-50%); max-width:min(640px,calc(100vw - 40px)); padding:9px 14px; border:1px solid var(--rule); border-radius:7px; background:var(--panel); color:var(--fg); box-shadow:0 3px 12px #0003; font-size:12px; white-space:normal; overflow-wrap:anywhere; pointer-events:none; }
+#document-note { margin:10px 20px 0; color:var(--dim); font-size:12px; }
 #quick-dialog,#file-dialog { color:var(--fg); background:var(--bg); border:1px solid var(--rule); border-radius:10px; padding:16px; box-shadow:0 12px 36px #0004; }
 #quick-dialog { width:min(560px,calc(100vw - 48px)); }
 #quick-dialog::backdrop,#file-dialog::backdrop { background:#0004; }
@@ -370,11 +375,11 @@ article th,article td { overflow-wrap:normal; }
 .dialog-heading button { color:var(--dim); border:0; background:transparent; padding:4px 7px; }
 #quick-input,#file-name { width:100%; box-sizing:border-box; background:var(--panel); color:var(--fg); border:1px solid var(--rule); border-radius:6px; padding:9px 10px; font:inherit; }
 #quick-list { max-height:min(330px,50vh); overflow:auto; margin:9px -5px 0; }
-#quick-list button { width:100%; display:flex; align-items:center; gap:10px; padding:9px 10px; border:0; border-radius:5px; color:var(--fg); background:transparent; text-align:left; }
+#quick-list button { font-size:var(--files-size); width:100%; display:flex; align-items:center; gap:10px; padding:9px 10px; border:0; border-radius:5px; color:var(--fg); background:transparent; text-align:left; }
 #quick-list button[aria-selected=true],#quick-list button:hover { background:var(--selected); }
 .quick-file-label { min-width:0; flex:1; }
 .quick-file-label strong,.quick-file-label small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.quick-file-label strong { font-weight:500; }.quick-file-label small { color:var(--dim); font-size:11px; margin-top:3px; }
+.quick-file-label strong { font-weight:500; }.quick-file-label small { color:var(--dim); font-size:clamp(11px,calc(var(--files-size) * .75),24px); margin-top:3px; }
 #quick-status { color:var(--dim); font-size:12px; margin:9px 0 0; min-height:1.4em; }
 #file-dialog { width:min(380px,calc(100vw - 48px)); }
 #file-name-label { display:block; margin:10px 0 6px; color:var(--dim); }
@@ -543,7 +548,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
     <button id="window-max" aria-label="Maximize" title="Maximize">□</button>
     <button id="window-close" aria-label="Close window" title="Close window">×</button>
   </div>
-  <span id="note" role="status" aria-live="polite"></span>
+
 </header>
 <div id="command-bank" hidden>
   <button id="b-new" aria-label="New note" title="New note (Ctrl+N)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 14h8M12 10v8"/></svg><span class="button-label">New</span></button>
@@ -596,7 +601,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
     <div id="disk-change" hidden>Changed on disk <button id="disk-reload">Reload</button><button id="disk-keep">Keep edits</button></div>
     <div id="content-row" role="tabpanel"><div id="content-main">
     <div id="fm"></div>
-    <div id="doc"><article id="article"></article></div>
+    <div id="doc"><div id="document-note" role="status" hidden></div><article id="article"></article></div>
     <section id="image-viewer" aria-label="Image viewer" hidden>
       <div id="image-tools" role="toolbar" aria-label="Image controls">
         <button id="image-back" hidden aria-label="Back to document" title="Back to document (Esc)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back to document</span></button>
@@ -616,6 +621,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
   <div id="document-status"><button id="cursor-status" title="Go to line (Ctrl+G)">Read mode</button><span id="format-status"></span></div>
   </div>
 </div>
+<span id="note" role="status" aria-live="polite" hidden></span>
 <dialog id="quick-dialog" aria-labelledby="quick-heading"><div class="dialog-heading"><h2 id="quick-heading">Quick Open</h2><button id="quick-close" aria-label="Close Quick Open">×</button></div><input id="quick-input" type="search" maxlength="256" autocomplete="off" placeholder="Find a file by name or path…" role="combobox" aria-expanded="true" aria-controls="quick-list" aria-autocomplete="list" aria-label="Find a workspace file"><div id="quick-list" role="listbox" aria-label="Matching files"></div><p id="quick-status" role="status"></p></dialog>
 <dialog id="file-dialog" aria-labelledby="file-title"><form id="file-form"><h2 id="file-title">Rename</h2><label id="file-name-label" for="file-name">Name</label><input id="file-name" required maxlength="255" autocomplete="off" aria-describedby="file-error"><p id="file-error" role="alert"></p><div class="dialog-actions"><button type="button" id="file-cancel">Cancel</button><button type="submit" id="file-submit">Rename</button></div></form></dialog>
 <dialog id="line-dialog"><form id="line-form"><label for="line-number">Go to line</label><input id="line-number" type="number" min="1" required><button type="submit">Go</button><button type="button" id="line-cancel">Cancel</button></form></dialog>
@@ -649,11 +655,17 @@ window.addEventListener('securitypolicyviolation',event=>{const message='Page po
 <script nonce="__SCRIPT_NONCE__">
 const shellNodes = new Map([...document.querySelectorAll('[id]')].map(node=>[node.id,node]));
 const $ = id => id === 'text' ? shellNodes.get('editor').querySelector('textarea:not([hidden])') : shellNodes.get(id) || document.getElementById(id);
+function scalarText(value) {
+ if(typeof value.toWellFormed==='function')return value.toWellFormed();
+ let out='';for(const char of value){const unit=char.charCodeAt(0);out+=char.length===1&&unit>=0xd800&&unit<=0xdfff?'\ufffd':char;}return out;
+}
 const send = o => {
+ for(const key of ['text','insert'])if(typeof o[key]==='string'){const clean=scalarText(o[key]);if(clean!==o[key]){o={...o,[key]:clean};window.app?.note('An incomplete character was replaced so the note can be saved safely.');}}
  if(o.cmd === "quit" || o.cmd === "closeWindow") app.flushZoom?.();
  const fromTab=o.fromTab??state.activeTab,editor=fromTab===state.activeTab?$("text"):editorNodes.get(fromTab),doc=$("doc");
- const view={editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0};
- if(fromTab===state.activeTab){view.editing=state.editing;view.scroll=state.embeddedImage?.tab===fromTab?state.embeddedImage.fraction:doc.scrollTop/(doc.scrollHeight||1);}
+ const view={};
+ if(editor?.dataset.ready==='true'){view.selectionStart=editor.selectionStart;view.selectionEnd=editor.selectionEnd;if(editor.clientHeight>0)view.editorScroll=editor.scrollTop;}
+ if(fromTab===state.activeTab){view.editing=state.editing;if(state.embeddedImage?.tab===fromTab)view.scroll=state.embeddedImage.fraction;else if(!state.editing&&doc.clientHeight>0)view.scroll=doc.scrollTop/(doc.scrollHeight||1);}
  const imageView=window.app?.captureImageView?.(fromTab);if(imageView)view.imageView=imageView;
  window.postNative({...o,fromTab,view});
 };
@@ -901,7 +913,7 @@ const app = {
   setDocument(d) {
     if($("article").dataset.renderKey !== d.renderKey || !d.renderKey) { clearMarks(); $("article").innerHTML = d.html; $("article").dataset.renderKey=d.renderKey || ""; }
     state.path = d.path || "";
-    app.note(d.note || "");
+    $("document-note").textContent=d.note||"";$("document-note").hidden=!d.note;
     $("fm").textContent = d.frontMatter || "";
     $("fm").classList.toggle("show", !!d.frontMatter);
     app.outline(d.outline || []);
@@ -913,7 +925,7 @@ const app = {
     app.refreshFind?.();
   },
   setEditorText(t) { if ($("text").value !== t) $("text").value = t; },
-  note(t) { clearTimeout(noteTimer); $("note").textContent = t || ""; if (t) noteTimer = setTimeout(() => $("note").textContent = "", 9000); },
+  note(t) { clearTimeout(noteTimer); $("note").textContent=t||"";$("note").hidden=!t;if(t)noteTimer=setTimeout(()=>{$("note").textContent="";$("note").hidden=true;},9000); },
   setDirty(d) {
     state.dirty = d;
     $("b-save").classList.toggle("on", d);
@@ -1073,7 +1085,7 @@ const app = {
     for (const a of document.querySelectorAll("#article a")) {
       if (a.dataset.external) a.onclick = e => { e.preventDefault(); send({ cmd:"external", url:a.getAttribute("href") }); };
       else if (a.dataset.open) a.onclick = e => { e.preventDefault(); send({ cmd:"openPath", path:a.dataset.open, fragment:a.dataset.fragment || "" }); };
-      else if(a.getAttribute("href")?.startsWith("#"))a.onclick=e=>{e.preventDefault();app.documentAnchor(decodeURIComponent(a.getAttribute("href").slice(1)))?.scrollIntoView({block:"start"});};
+      else if(a.getAttribute("href")?.startsWith("#"))a.onclick=e=>{e.preventDefault();app.goToAnchor(a.getAttribute("href").slice(1));};
     }
   },
   toggleEdit(on, notify = true) {
@@ -1086,6 +1098,7 @@ const app = {
     $("b-edit").setAttribute("aria-pressed",String(on));
     setCommand("b-edit",on ? "preview" : "edit",on ? "Preview" : "Edit");
     $("fm").hidden = on || !!state.image && !state.embeddedImage;
+    if(on && $("text")._restoreScroll!==undefined){$("text").scrollTop=$("text")._restoreScroll;delete $("text")._restoreScroll;}
     if (on && notify) $("text").focus();
     app.updateStatus?.();
     if (notify) send({cmd:"viewState"});
@@ -1165,7 +1178,7 @@ const app = {
       const arrow=document.createElement("span");arrow.className="select-arrow";arrow.textContent="▾";arrow.setAttribute("aria-hidden","true");
       control.append(swatch,name,arrow);control.onclick=()=>app.chooseTheme(control);
     } else if (key === "heading_styles") {
-      const themeId=state.appliedTheme?.id || state.settings.theme;
+      const themeId=state.settings.theme;
       const style=state.settings.heading_styles?.[themeId] || {};
       control=document.createElement("div");control.className="heading-control";
       const mode=app.selectControl([{value:"auto",label:"Automatic"},{value:"custom",label:"Custom"}],style.color?"custom":"auto",next=>app.saveHeadingStyle({color:next==="auto"?"":state.appliedTheme?.fg||"#222222"}),"Heading color");
