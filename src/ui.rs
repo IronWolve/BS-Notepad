@@ -536,6 +536,11 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
 #hot { display:none; top:4px; height:10px; } body.auto #hot { display:block; }
 #sidehot { left:4px; width:10px; } #peek { transform:translateX(-50%); }
 @media (forced-colors:active) { button,input,select { forced-color-adjust:auto; } :focus-visible { outline:2px solid Highlight!important; } .document-tab.active { border-bottom:2px solid Highlight; } article mark { background:Highlight;color:HighlightText; } }
+
+#explorer-head { flex-wrap:wrap; }
+#explorer-head .explorer-action { flex-shrink:0; }
+#explorer-head .explorer-action[aria-pressed=true] { color:var(--fg); opacity:.82; background:var(--selected); }
+.item .file-date { flex:0 0 var(--file-date-width,19ch); order:-1; color:var(--dim); font:normal max(10px,calc(var(--files-size)*.72))/1.5 var(--code-font); font-variant-numeric:tabular-nums; white-space:nowrap; text-align:left; margin-right:5px; }
 </style></head><body>
 
 <div id="hot" aria-hidden="true"></div>
@@ -592,6 +597,8 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
       <button id="folder-new" class="explorer-action" aria-label="New note" title="New note"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 14h8M12 10v8"/></svg></button>
       <button id="folder-open" class="explorer-action" aria-label="Open folder" title="Open folder (Ctrl+Shift+O)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2M3 9h18l-3 11H2z"/></svg></button>
       <button id="folder-refresh" class="explorer-action" aria-label="Refresh folder" title="Refresh folder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-4l2 3M4 17l2 3a8 8 0 0 0 13-4"/></svg></button>
+      <button id="folder-dates" class="explorer-action" aria-label="Show modified dates" aria-pressed="false" title="Show modified dates"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M7 2v4M17 2v4M3 9h18M7 13h3M7 17h3"/><circle cx="16" cy="15" r="3"/><path d="M16 13v2l1 1"/></svg></button>
+      <button id="folder-sort" class="explorer-action" aria-label="Sort by modified date, newest first" aria-pressed="false" title="Sort by modified date · newest first"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11M4 10h8M4 15h5M19 4v16m-3-3 3 3 3-3"/></svg></button>
       <button id="sidepin" class="explorer-action" aria-label="Pin sidebar" title="Keep sidebar visible"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4zM12 15v7"/></svg></button>
     </div>
     <div id="file-tools"><div id="filter-wrap"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="tree-filter" aria-label="Filter loaded files" placeholder="Filter files…" title="Filter files in the folders you have expanded"></div></div>
@@ -758,10 +765,13 @@ function fileIcon(name, directory = false, expanded = false) {
  return icon;
 }
 function fillFileRow(el, name, directory, expanded = false) {
+ const signature=name+'|'+directory+'|'+expanded;
+ if(el.dataset.rowSignature===signature){app.updateFileDate?.(el);return;}
+ el.dataset.rowSignature=signature;
  const chevron=document.createElement('span'); chevron.className='chevron'; chevron.setAttribute('aria-hidden','true');
  if(directory) chevron.innerHTML=ICONS.chevron;
  const label=document.createElement('span');label.className='file-label';label.textContent=name;
- el.replaceChildren(chevron,fileIcon(name,directory,expanded),label);
+ el.replaceChildren(chevron,fileIcon(name,directory,expanded),label);app.updateFileDate?.(el);
 }
 function normalizedPath(path) {
  let value=path.replaceAll(String.fromCharCode(92),'/');
@@ -783,12 +793,14 @@ const GROUPS = {
   Appearance: ["theme", "text_contrast", "heading_styles", "tab_shape", "tab_highlight", "icon_style", "icon_visibility", "chrome", "zoom"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "files_size", "body_size",
           "code_size", "line_height", "ligatures"],
-  Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
+  Files: ["file_dates", "file_sort_date", "file_date_format", "file_time_24h", "file_time_seconds", "show_hidden"],
+  Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
   Editor: ["word_wrap", "tab_size", "tab_style", "continue_lists", "minimap", "status_bar"],
   Document: ["view_mode", "syntax_colour", "highlight_limit_kb",
              "plain_text_above_mb", "remote_images"],
 };
 const CHOICES = {
+  file_date_format: ["ymd", "mdy", "dmy"],
   tab_style: ["spaces", "tabs"],
   view_mode: ["rendered", "source"],
   chrome: ["auto", "always"],
@@ -800,6 +812,11 @@ const CHOICES = {
 };
 const ICON_STYLE_LABELS = {soft:"Soft outline",crisp:"Crisp outline",fine:"Fine line",bold:"Bold line",square:"Square line",rounded:"Rounded line",duotone:"Duotone",color:"Color outline",pastel:"Pastel tiles",contrast:"High contrast"};
 const LABELS = {
+ file_dates:["Modified dates","Show each file or folder’s last modified time before its name, in your local time."],
+ file_sort_date:["Newest first","Sort by modified time inside each folder. Folders stay above files; turn off for name order."],
+ file_date_format:["Date format","Choose the order of year, month and day."],
+ file_time_24h:["24-hour clock","Off uses 12-hour time with am/pm."],
+ file_time_seconds:["Show seconds","Include seconds in file timestamps."],
  status_bar:["Document status","Show line, column, encoding and line endings."],
  remote_images:["Remote images","Load pictures hosted on websites in documents."],
  minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
@@ -836,7 +853,7 @@ const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], headin
  tab_style:["Indent with","Insert spaces or actual tab characters."],
  continue_lists:["Continue Markdown lists","Continue bullets, numbered lists, tasks and quotes when pressing Enter."],
  text_contrast:[0,100,5], icon_visibility:[20,100,5], ui_size:[10,28,1], files_size:[12,48,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
-const choiceLabel = x => ({rounded:"Rounded",square:"Square",soft:"Soft tint",line:"Underline",glow:"Soft glow",always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
+const choiceLabel = x => ({ymd:"2026-10-25",mdy:"10/25/2026",dmy:"25/10/2026",rounded:"Rounded",square:"Square",soft:"Soft tint",line:"Underline",glow:"Soft glow",always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
 const app = {
@@ -880,6 +897,7 @@ const app = {
     r.setProperty("--code-font", app.fontStack(s.code_font,"monospace"));
     r.setProperty("--ui-size", s.ui_size + "px");
     r.setProperty("--files-size", (s.files_size || 16) + "px");
+    app.applyFileDates?.();
     r.setProperty("--body-size", s.body_size + "px");
     r.setProperty("--code-size", s.code_size + "px");
     r.setProperty("--line", s.line_height);
@@ -907,7 +925,7 @@ const app = {
     $("b-outline").title = nextSidebarAction + " (Outline → hidden → Files)";
     $("b-outline").setAttribute("aria-label", nextSidebarAction);
     $("sidebar-title").textContent = s.sidebar_tab === "outline" ? "Outline" : "Files";
-    for (const id of ["folder-new","folder-open","folder-refresh"]) $(id).hidden = s.sidebar_tab !== "files";
+    for (const id of ["folder-new","folder-open","folder-refresh","folder-dates","folder-sort"]) $(id).hidden = s.sidebar_tab !== "files";
     app.setThemeControl();
     $("grip").setAttribute("aria-valuenow", s.sidebar_width);
     $("grip").setAttribute("aria-valuemin", 180);
@@ -1039,7 +1057,7 @@ const app = {
       }
       el.tabIndex=-1;el.onfocus=()=>{for(const row of $("pane-files").querySelectorAll(".item"))row.tabIndex=-1;el.tabIndex=0;};
       el.disabled=!e.dir&&!e.openable;
-      el.dataset.path = e.path; el.dataset.name = e.name;
+      el.dataset.path = e.path; el.dataset.name = e.name;el.dataset.modified=e.modified??"";
       fillFileRow(el,e.name,e.dir,el.getAttribute("aria-expanded") === "true");
       el.setAttribute("aria-label",e.name);
       const current = samePath(e.path,state.path);

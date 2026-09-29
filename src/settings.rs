@@ -71,6 +71,11 @@ pub struct Settings {
     pub tree_scroll: f64,
     pub tree_filter: String,
     pub show_hidden: bool,
+    pub file_dates: bool,
+    pub file_sort_date: bool,
+    pub file_time_24h: bool,
+    pub file_time_seconds: bool,
+    pub file_date_format: String,
     pub minimap: bool,
     pub status_bar: bool,
     pub word_wrap: bool,
@@ -138,6 +143,11 @@ impl Default for Settings {
             tree_scroll: 0.0,
             tree_filter: String::new(),
             show_hidden: false,
+            file_dates: false,
+            file_sort_date: false,
+            file_time_24h: false,
+            file_time_seconds: false,
+            file_date_format: "ymd".into(),
             minimap: true,
             status_bar: true,
             word_wrap: true,
@@ -298,6 +308,9 @@ impl Settings {
     }
 
     pub fn normalize(&mut self) {
+        if !["ymd", "mdy", "dmy"].contains(&self.file_date_format.as_str()) {
+            self.file_date_format = "ymd".into();
+        }
         if !["auto", "always"].contains(&self.sidebar_return.as_str()) {
             self.sidebar_return = "always".into();
         }
@@ -455,6 +468,11 @@ impl Settings {
                 | "sidebar_width"
                 | "sidebar_tab"
                 | "show_hidden"
+                | "file_dates"
+                | "file_sort_date"
+                | "file_time_24h"
+                | "file_time_seconds"
+                | "file_date_format"
                 | "restore_last_file"
                 | "restore_tabs"
                 | "close_to_tray"

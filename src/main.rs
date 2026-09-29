@@ -273,6 +273,8 @@ impl App {
         self.io.send(jobs::IoTask::Tree {
             path: dir,
             hidden: self.settings.show_hidden,
+            dates: self.settings.file_dates,
+            sort_date: self.settings.file_sort_date,
             request: json!(null),
             root: true,
             serial: self.tree_serial,
@@ -980,7 +982,7 @@ impl App {
                 self.preview_theme = None;
             }
             self.settings = updated;
-            if key == "show_hidden" {
+            if matches!(key, "show_hidden" | "file_dates" | "file_sort_date") {
                 self.send_tree(self.tree_dir.clone());
             }
             self.send_settings();
@@ -1612,6 +1614,8 @@ impl App {
                     self.io.send(jobs::IoTask::Tree {
                         path: path.into(),
                         hidden: self.settings.show_hidden,
+                        dates: self.settings.file_dates,
+                        sort_date: self.settings.file_sort_date,
                         request: value.get("request").cloned().unwrap_or(json!(null)),
                         root: false,
                         serial: 0,

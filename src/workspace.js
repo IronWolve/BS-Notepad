@@ -769,3 +769,30 @@ app.queueView=()=>{clearTimeout(viewTimer);viewTimer=setTimeout(()=>{viewTimer=n
 window.addEventListener('blur',()=>{if(viewTimer){clearTimeout(viewTimer);viewTimer=null;send({cmd:'viewState'});}});
 document.addEventListener('keydown',event=>{if(event.repeat&&primaryModifier(event)&&['n','t','o','s','w','q'].includes(commandKey(event))){event.preventDefault();event.stopImmediatePropagation();}},true);
 for(const id of ['options','help-overlay']){let downOnBackdrop=false;$(id).onpointerdown=e=>{downOnBackdrop=e.target===$(id);};$(id).onclick=e=>{if(downOnBackdrop&&e.target===$(id))id==='options'?app.options(false):app.help(false);downOnBackdrop=false;};}
+
+app.fileDate=timestamp=>{
+ if(timestamp===null||timestamp===undefined||timestamp==='')return '—';
+ const date=new Date(Number(timestamp));if(!Number.isFinite(date.getTime()))return '—';
+ const pad=value=>String(value).padStart(2,'0'),year=date.getFullYear(),month=pad(date.getMonth()+1),day=pad(date.getDate()),settings=state.settings;
+ const calendar=settings.file_date_format==='mdy'?month+'/'+day+'/'+year:settings.file_date_format==='dmy'?day+'/'+month+'/'+year:year+'-'+month+'-'+day;
+ const hour=date.getHours(),time=(settings.file_time_24h?pad(hour):String(hour%12||12))+':'+pad(date.getMinutes())+(settings.file_time_seconds?':'+pad(date.getSeconds()):'');
+ return calendar+' '+time+(settings.file_time_24h?'':hour<12?' am':' pm');
+};
+app.updateFileDate=row=>{
+ let date=row.querySelector(':scope > .file-date');
+ if(!state.settings.file_dates){date?.remove();return;}
+ if(!date){date=document.createElement('time');date.className='file-date';row.prepend(date);}
+ const timestamp=row.dataset.modified;date.textContent=app.fileDate(timestamp);
+ if(timestamp&&Number.isFinite(Number(timestamp))){const value=new Date(Number(timestamp));if(Number.isFinite(value.getTime()))date.dateTime=value.toISOString();}
+ else date.removeAttribute('datetime');
+ date.title=date.textContent==='—'?'Modified time unavailable':'Modified '+date.textContent;date.setAttribute('aria-label',date.title);
+};
+app.applyFileDates=()=>{
+ const settings=state.settings;
+ document.documentElement.style.setProperty('--file-date-width',(settings.file_time_24h?16:19)+(settings.file_time_seconds?3:0)+'ch');
+ $('folder-dates').setAttribute('aria-pressed',String(!!settings.file_dates));$('folder-dates').title=settings.file_dates?'Hide modified dates':'Show modified dates';$('folder-dates').setAttribute('aria-label',$('folder-dates').title);
+ $('folder-sort').setAttribute('aria-pressed',String(!!settings.file_sort_date));$('folder-sort').title=settings.file_sort_date?'Sort by name':'Sort by modified date · newest first';$('folder-sort').setAttribute('aria-label',$('folder-sort').title);
+ for(const row of $('pane-files').querySelectorAll('.item[data-path]'))app.updateFileDate(row);
+};
+$('folder-dates').onclick=()=>send({cmd:'setting',key:'file_dates',value:!state.settings.file_dates});
+$('folder-sort').onclick=()=>send({cmd:'setting',key:'file_sort_date',value:!state.settings.file_sort_date});

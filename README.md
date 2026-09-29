@@ -15,7 +15,7 @@ Read a document, switch to its source, and edit it in the same window. BS Notepa
 ## What it does
 
 - **Read and write.** Rendered Markdown, syntax-colored source, an editor, and a reading column that adapts to wide tables and code.
-- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. The Outline toolbar button cycles through document headings, a hidden sidebar, and the file tree. Select several files in the Open dialog, or right-click or middle-click a file to open it in a tab. Drag tabs to reorder them, use Ctrl+P to find a workspace file, and browse Recent files from the main menu. Rename files or folders and create folders from the Files context menu.
+- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. The Outline toolbar button cycles through document headings, a hidden sidebar, and the file tree. Select several files in the Open dialog, or right-click or middle-click a file to open it in a tab. Drag tabs to reorder them, use Ctrl+P to find a workspace file, and browse Recent files from the main menu. Rename files or folders and create folders from the Files context menu. The calendar icon shows modified timestamps before each name; the sort icon switches between name order and newest first, keeping folders first.
 - **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast, choose rounded or square tabs with a quiet active-tab accent, and set separate interface, reading, and code fonts. Appearance includes per-theme heading colors, an optional soft shadow for large document headings, ten toolbar icon treatments, and an icon visibility slider; the soft outline style remains the default. Options → Fonts also has an independent Files size setting (12–48 px) for the file tree and outline.
 - **Find your place.** Toggle Find, match case or whole words, replace text, jump to a line, and navigate with the optional document map.
 - **Look closer.** Images open inside the workspace with fit, actual size, zoom, pan, and a magnifying lens. Click a picture in Markdown to inspect it, then return to your reading position.
@@ -34,6 +34,8 @@ Screenshots show the app's actual interface in a browser test fixture with sampl
 ## Getting started
 
 Open a file with **Ctrl+O**, or choose a folder with **Ctrl+Shift+O**. Dragging a file into the window also opens it. Use **Ctrl+E** to switch between editing and reading; **Ctrl+S** saves. Tab and Shift+Tab indent or outdent selected lines. Editor options choose spaces or tab characters and Markdown list continuation.
+
+Options → Files controls timestamp formatting. The default is `2026-10-25 12:04 pm` in local time; choose a 24-hour clock, seconds, or a different date order.
 
 The main menu is at the upper left. Files and the theme picker sit beside it. Find, Outline, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
 

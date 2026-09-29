@@ -130,6 +130,8 @@ pub enum IoTask {
     Tree {
         path: PathBuf,
         hidden: bool,
+        dates: bool,
+        sort_date: bool,
         request: serde_json::Value,
         root: bool,
         serial: u64,
@@ -187,13 +189,16 @@ impl IoWorker {
                         IoTask::Tree {
                             path,
                             hidden,
+                            dates,
+                            sort_date,
                             request,
                             root,
                             serial,
                         } => {
                             let path = crate::paths::normalize(&path);
                             let result =
-                                crate::tree::list(&path, hidden).map_err(|e| e.to_string());
+                                crate::tree::list_with_options(&path, hidden, dates, sort_date)
+                                    .map_err(|e| e.to_string());
                             events(UserEvent::TreeLoaded {
                                 path,
                                 request,
