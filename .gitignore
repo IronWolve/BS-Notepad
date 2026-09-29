@@ -47,6 +47,7 @@
 !/tests/ui-fixture.js
 !/tests/ui-regressions.js
 !/tests/sidebar-regressions.js
+!/tests/appearance-regressions.js
 !/scripts/check-ui.sh
 
 !/src/mac_menu.rs

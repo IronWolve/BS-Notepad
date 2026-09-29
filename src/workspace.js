@@ -308,6 +308,8 @@ app.setThemeControl=()=>{
   const current=state.previewTheme||state.settings.theme,name=state.themes.find(t=>t.id===current)?.name||'Theme';
   const arrow=document.createElement('span');arrow.className='select-arrow';arrow.textContent='▾';arrow.setAttribute('aria-hidden','true');
   $('b-theme').replaceChildren(arrow);$('b-theme').title=(state.previewTheme?'Preview: ':'Theme: ')+name;$('b-theme').setAttribute('aria-label','Theme: '+name);app.favoriteLabel?.();
+  const picker=$('sets').querySelector('.theme-select'),theme=state.themes.find(t=>t.id===current);
+  if(picker&&theme){picker.querySelector('.theme-name').textContent=name+(state.previewTheme?' (preview)':'');const swatch=picker.querySelector('.theme-swatch');swatch.style.background=theme.bg;swatch.style.color=theme.fg;swatch.style.borderColor=theme.rule;}
 };
 app.clearThemePreview=()=>{clearTimeout(themePreviewTimer);themePreviewToken++;state.previewTheme=null;app.setThemeControl();};
 app.previewTheme=id=>{
@@ -321,7 +323,7 @@ app.themePreview=payload=>{
   app.applyTheme(payload.theme);app.setThemeControl();
 };
 app.commitTheme=id=>{app.clearThemePreview();send({cmd:'setting',key:'theme',value:id});};
-app.chooseTheme=()=>openChoices($('b-theme'),state.themes.map(t=>({value:t.id,label:t.name})),state.previewTheme||state.settings.theme,app.commitTheme,app.previewTheme);
+app.chooseTheme=(anchor=$('b-theme'))=>openChoices(anchor,state.themes.map(t=>({value:t.id,label:t.name})),state.previewTheme||state.settings.theme,app.commitTheme,app.previewTheme);
 
 const HELP = [
  {id:'start',title:'Getting started',paragraphs:[
@@ -355,7 +357,7 @@ const HELP = [
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
   'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover bright colors and deeper shades, including amber, burgundy, plum, forest green and deep teal. Use the Bold, Soft and Classic filters to browse the collections. Favorite a theme in the menu to keep it in Favorites. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
-  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
+  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. Appearance also offers rounded or square tabs and a soft tint, underline or static glow for the active tab. Fonts sits directly below Appearance in Options. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
@@ -526,12 +528,19 @@ app.layoutReader=()=>{
   app.scheduleMap();
 };
 app.scheduleReaderLayout=()=>{cancelAnimationFrame(readerFrame);readerFrame=requestAnimationFrame(app.layoutReader);};
+function dialogContentHeight(element){
+  const top=element.getBoundingClientRect().top,style=getComputedStyle(element);
+  const bottom=Math.max(top,...[...element.children].filter(child=>child.getClientRects().length).map(child=>child.getBoundingClientRect().bottom+parseFloat(getComputedStyle(child).marginBottom||0)));
+  return Math.ceil(bottom-top+element.scrollTop+parseFloat(style.paddingBottom||0));
+}
 function fitDialog(panel,content){
   if(!panel.offsetParent)return;
   const available=innerHeight-32,current=panel.getBoundingClientRect().height;
-  const overflow=content.scrollHeight-content.clientHeight;
-  const needed=Math.min(available,current+Math.max(0,overflow)+2);
-  if((overflow>1||current>available)&&Math.abs(needed-current)>1)panel.style.height=needed+'px';
+  const rail=panel.id==='panel'?$('rail'):$('help-nav');
+  const chrome=current-content.clientHeight;
+  const minimum=parseFloat(getComputedStyle(panel).minHeight)||0;
+  const needed=Math.min(available,Math.max(minimum,chrome+Math.max(dialogContentHeight(content),dialogContentHeight(rail))+2));
+  if(Math.abs(needed-current)>1)panel.style.height=needed+'px';
 }
 app.scheduleDialogFit=()=>{cancelAnimationFrame(dialogFrame);dialogFrame=requestAnimationFrame(()=>{fitDialog($('panel'),$('sets'));fitDialog($('help-panel'),$('help-content'));});};
 const originalDrawOptions=app.drawOptions;app.drawOptions=()=>{originalDrawOptions();app.scheduleDialogFit();};

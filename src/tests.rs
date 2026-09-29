@@ -642,3 +642,23 @@ fn oversized_images_are_rejected_without_loading_their_bytes() {
     assert_eq!(image.image.unwrap().format, "SVG");
     assert!(image.read_only && image.source.is_empty());
 }
+
+#[test]
+fn tab_appearance_preferences_persist_and_reject_unknown_values() {
+    let f = Fixture::new();
+    let mut settings = Settings::default();
+    assert_eq!(settings.tab_shape, "rounded");
+    assert_eq!(settings.tab_highlight, "soft");
+    settings.tab_shape = "square".into();
+    settings.tab_highlight = "glow".into();
+    settings.save(&f.0).unwrap();
+    let saved = Settings::load(&f.0);
+    assert_eq!(saved.tab_shape, "square");
+    assert_eq!(saved.tab_highlight, "glow");
+    settings.tab_shape = "unknown".into();
+    settings.tab_highlight = "flashing".into();
+    settings.save(&f.0).unwrap();
+    let normalized = Settings::load(&f.0);
+    assert_eq!(normalized.tab_shape, "rounded");
+    assert_eq!(normalized.tab_highlight, "soft");
+}

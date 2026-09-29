@@ -87,11 +87,6 @@ body.autoside #side.show,body.autoside #side:focus-within { transform:none; }
 .light-icons .file-teal { color:#087b6b; } .light-icons .file-orange { color:#a65823; } .light-icons .file-muted { color:#556b76; }
 .item .file-icon { margin-right:2px; }
 #document-icon,#root-icon { display:inline-flex; align-items:center; }
-.set.theme-setting { grid-template-columns:minmax(120px,1fr) 26px; }
-.theme-setting .lab { grid-column:1; }
-.theme-setting .sw { grid-column:1 / -1; grid-row:2; padding:3px 0; gap:8px; }
-.theme-setting .rst { grid-column:2; grid-row:1; }
-.theme-setting .sw button { flex:1 0 100px; min-height:38px; }
 .kids { margin-left:16px; border-left:1px solid color-mix(in srgb,var(--fg) 12%,transparent); }
 .kids .item { padding-left:9px; }
 .tree-message { padding:10px 16px; color:var(--dim); font-size:12px; line-height:1.6; white-space:normal; }
@@ -347,11 +342,6 @@ article th,article td { overflow-wrap:normal; }
 #choice-popup.theme-grid #choice-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; }
 #choice-popup.theme-grid #choice-list button { min-width:0; }
 @media(max-width:460px) { #choice-popup.theme-grid #choice-list { grid-template-columns:1fr; } }
-.theme-setting .sw { display:flex; flex-direction:column; align-items:stretch; }
-.theme-swatches { display:grid; grid-template-columns:repeat(auto-fit,minmax(105px,1fr)); gap:8px; }
-.theme-swatches button { min-width:0; }
-@media(max-width:700px) { .theme-swatches { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-.theme-swatches button[hidden] { display:none; }
 .theme-filters { display:flex; gap:4px; padding:3px 0 7px; }
 .theme-setting .theme-filters button,#choice-families .theme-filters button { flex:1; width:auto; min-height:28px; padding:5px 10px; border:0; border-radius:6px; background:transparent; color:var(--dim); font:inherit; justify-content:center; }
 .theme-setting .theme-filters button[aria-pressed=true],#choice-families .theme-filters button[aria-pressed=true] { color:var(--fg); background:color-mix(in srgb,var(--fg) 10%,transparent); }
@@ -406,6 +396,34 @@ article th,article td { overflow-wrap:normal; }
 #pane-outline .item { overflow:hidden; }
 body.resizing-sidebar,body.resizing-sidebar * { cursor:col-resize!important; user-select:none!important; }
 body.resizing-sidebar #side { transition:none; }
+/* Compact settings and quiet, theme-colored document tabs. */
+#panel { width:min(920px,calc(100vw - 32px)); }
+#sets { padding:4px 18px 12px; }
+.set { padding:10px 0; gap:10px; grid-template-columns:minmax(120px,1fr) minmax(140px,230px) 24px; }
+.set:last-child { border-bottom:0; }
+.set .sub { font-size:11px; line-height:1.4; max-width:46ch; }
+.theme-select { gap:9px; }
+.zoom-control { display:flex; align-items:center; gap:7px; }
+.zoom-control input { min-width:0; flex:1; }
+.zoom-control span { color:var(--dim); font-size:12px; }
+.theme-select .theme-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#document-tabs { gap:4px; padding:4px 4px 0; }
+.document-tab,.tab-example { border:1px solid transparent; border-bottom:0; border-radius:7px 7px 0 0; background:transparent; }
+.document-tab.active,.tab-example.active { background:color-mix(in srgb,var(--accent) 8%,var(--bg)); border-color:color-mix(in srgb,var(--fg) 16%,transparent); box-shadow:none; }
+.document-tab.active .tab-label,.tab-example.active .tab-label { color:var(--fg); font-weight:600; }
+.tab-label { padding-top:8px; padding-bottom:8px; }
+:root[data-tab-shape="square"] .document-tab,:root[data-tab-shape="square"] .tab-example { border-radius:0; }
+:root[data-tab-highlight="line"] .document-tab.active,:root[data-tab-highlight="line"] .tab-example.active { background:var(--bg); border-color:transparent; box-shadow:inset 0 -2px color-mix(in srgb,var(--accent) 70%,var(--bg)); }
+:root[data-tab-highlight="glow"] .document-tab.active,:root[data-tab-highlight="glow"] .tab-example.active { background:color-mix(in srgb,var(--accent) 6%,var(--bg)); border-color:color-mix(in srgb,var(--accent) 30%,var(--rule)); box-shadow:0 0 8px color-mix(in srgb,var(--accent) 18%,transparent); }
+.tab-preview { grid-column:1 / -1; display:flex; align-items:end; gap:5px; padding:8px 8px 0; background:var(--panel); border:1px solid color-mix(in srgb,var(--rule) 65%,transparent); border-radius:6px; overflow:hidden; }
+.tab-example { min-width:0; max-width:48%; }
+.tab-example .tab-label { display:block; padding:7px 10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+@media(max-width:700px) { .set { grid-template-columns:minmax(100px,1fr) minmax(120px,170px) 22px; gap:8px; } #sets { padding:4px 12px 10px; } #rail { width:112px; } }
+@media(max-width:700px) and (max-height:580px) {
+  #sets[data-group="Appearance"] .set { padding:5px 0; }
+  #sets[data-group="Appearance"] .sub { display:none; }
+  #sets[data-group="Appearance"] .tab-preview { padding-top:5px; }
+}
 </style></head><body>
 
 <div id="hot"></div>
@@ -637,11 +655,11 @@ let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"
 // Grouped so each screen is short. Remembered state - window size, last file,
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
-  Appearance: ["text_contrast", "theme", "chrome", "zoom"],
-  Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
-  Editor: ["word_wrap", "tab_size", "minimap", "status_bar"],
+  Appearance: ["theme", "text_contrast", "tab_shape", "tab_highlight", "chrome", "zoom"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "body_size",
           "code_size", "line_height", "ligatures"],
+  Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
+  Editor: ["word_wrap", "tab_size", "minimap", "status_bar"],
   Document: ["view_mode", "syntax_colour", "highlight_limit_kb",
              "plain_text_above_mb", "remote_images"],
 };
@@ -650,13 +668,17 @@ const CHOICES = {
   chrome: ["auto", "always"],
   sidebar: ["auto", "always", "off"],
   sidebar_tab: ["files", "outline"],
+  tab_shape: ["rounded", "square"],
+  tab_highlight: ["soft", "line", "glow"],
 };
 const LABELS = {
  status_bar:["Document status","Show line, column, encoding and line endings."],
  remote_images:["Remote images","Load pictures hosted on websites in documents."],
  minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
- text_contrast:["Text contrast","0 keeps the palette. 100 gives the strongest text: darker on light backgrounds, lighter on dark. Surfaces stay unchanged."],
- theme:["Color theme","Colors for the editor, reader and workspace."],
+ text_contrast:["Text contrast","Strengthen text without changing the background."],
+ tab_shape:["Tab shape","Rounded corners or straight edges."],
+ tab_highlight:["Active tab","A quiet accent for the document you are using."],
+ theme:["Color theme","Preview any palette; click a choice to save it."],
  chrome:["Toolbar","Keep controls visible or reveal them at the top edge."],
  sidebar:["Sidebar","Dock the browser, reveal it from the left edge, or hide it."],
  sidebar_width:["Sidebar width","Width in pixels; drag the divider to resize."],
@@ -671,13 +693,13 @@ const LABELS = {
  ui_font:["Interface font","Toolbar, file browser and options."], body_font:["Reading font","Rendered Markdown paragraphs and headings."], code_font:["Code font","Editor and code blocks; monospace fonts."],
  ui_size:["Interface size","Pixels."], body_size:["Reading size","Pixels before zoom."], code_size:["Code size","Pixels before zoom."],
  line_height:["Line spacing","Line height as a multiple of the font size."], ligatures:["Font ligatures","Allow the font to join character combinations."],
- zoom:["Document zoom","Ctrl+wheel or Ctrl+Plus/Minus changes zoom. Ctrl+0 returns to 100%."], view_mode:["Reading mode","Rendered Markdown or syntax-colored source."],
+ zoom:["Document zoom","Ctrl+wheel or Ctrl+Plus/Minus. Ctrl+0 resets."], view_mode:["Reading mode","Rendered Markdown or syntax-colored source."],
  syntax_colour:["Syntax highlighting","Color source files and fenced code blocks."],
  highlight_limit_kb:["Highlight limit","Skip syntax highlighting above this size in KB."],
  plain_text_above_mb:["Large-file preview threshold","Above this size in MB, open a read-only preview of the first 256 KB. Maximum editable file size is 32 MB."]
 };
 const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], ui_size:[10,28,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
-const choiceLabel = x => ({always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
+const choiceLabel = x => ({rounded:"Rounded",square:"Square",soft:"Soft tint",line:"Underline",glow:"Soft glow",always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
 const app = {
@@ -724,6 +746,8 @@ const app = {
     $("sidehot").hidden = s.sidebar !== "auto";
     r.setProperty("--zoom", s.zoom);
     document.body.style.fontVariantLigatures = s.ligatures ? "normal" : "none";
+    document.documentElement.dataset.tabShape = s.tab_shape || "rounded";
+    document.documentElement.dataset.tabHighlight = s.tab_highlight || "soft";
     $("side").classList.toggle("hidden", s.sidebar === "off");
     document.body.classList.toggle("autoside", s.sidebar === "auto");
     $("side").classList.toggle("pinned", s.sidebar === "always");
@@ -960,11 +984,11 @@ const app = {
   },
   drawOptions() {
     const focusKey = document.activeElement?.dataset.setting || document.activeElement?.closest("[data-setting]")?.dataset.setting;
-    const focusTheme = document.activeElement?.dataset.theme;
     const query = ($("search").value || "").toLowerCase();
     for (const b of $("rail").children)
       b.classList.toggle("on", b.textContent === activeGroup && !query);
     const box = $("sets");
+    box.dataset.group = query ? "search" : activeGroup;
     box.innerHTML = "";
     const groups = query ? Object.keys(GROUPS) : [activeGroup];
     for (const group of groups) {
@@ -980,7 +1004,6 @@ const app = {
     if (!box.children.length)
       box.innerHTML = '<div class="grp" style="color:var(--dim)">Nothing matches.</div>';
     if (focusKey) { const control=box.querySelector(`[data-setting="${focusKey}"]`); (control?.querySelector("input") || control)?.focus(); }
-    if (focusTheme) box.querySelector(`[data-theme="${focusTheme}"]`)?.focus();
   },
   settingRow(key) {
     const value = state.settings[key];
@@ -993,32 +1016,24 @@ const app = {
     label.textContent = LABELS[key]?.[0] || key.replace(/_/g, " ");
     label.id = "label-" + key;
     const help = document.createElement("span"); help.className="sub";
-    help.textContent = (LABELS[key]?.[1] || "") + " Default: " + choiceLabel(String(fallback)) + ".";
+    help.textContent = LABELS[key]?.[1] || "";
+    help.id = "help-" + key; label.title = help.textContent;
     label.appendChild(help);
     row.appendChild(label);
 
     let control;
     if (key === "theme") {
-      control = document.createElement("div");
-      control.className = "sw";
       row.classList.add("theme-setting");
-      control.setAttribute("role", "group");
-      const swatches=document.createElement("div");swatches.className="theme-swatches";
-      const filter=()=>{for(const b of swatches.children)b.hidden=themeFamily!=="all"&&(themeFamily==='favorites'?!(state.settings.theme_favorites||[]).includes(b.dataset.theme):app.themeFamily(b.dataset.theme)!==themeFamily);app.scheduleDialogFit?.();};
-      control.appendChild(app.themeFilters(filter));
-      for (const t of state.themes) {
-        const b = document.createElement("button");
-        b.style.background = t.bg;
-        b.style.borderColor = t.rule;
-        b.style.color = t.fg;
-        b.textContent = t.name;
-        b.dataset.theme = t.id;
-        b.title = t.name; b.setAttribute("aria-label", t.name); b.setAttribute("aria-pressed", String(t.id === value));
-        b.classList.toggle("on", t.id === value);
-        b.onclick = () => app.commitTheme(t.id);
-        swatches.appendChild(b);
-      }
-      control.appendChild(swatches);filter();
+      control = document.createElement("button"); control.type="button";
+      control.className="select-control theme-select";
+      control.setAttribute("role","combobox"); control.setAttribute("aria-label","Color theme");
+      control.setAttribute("aria-haspopup","listbox"); control.setAttribute("aria-expanded","false"); control.setAttribute("aria-controls","choice-list");
+      const current=state.themes.find(t=>t.id===(state.previewTheme || value));
+      const swatch=document.createElement("span");swatch.className="theme-swatch";swatch.setAttribute("aria-hidden","true");swatch.textContent="Aa";
+      if(current){swatch.style.background=current.bg;swatch.style.color=current.fg;swatch.style.borderColor=current.rule;}
+      const name=document.createElement("span");name.className="selected-label theme-name";name.textContent=current?.name || value;
+      const arrow=document.createElement("span");arrow.className="select-arrow";arrow.textContent="▾";arrow.setAttribute("aria-hidden","true");
+      control.append(swatch,name,arrow);control.onclick=()=>app.chooseTheme(control);
     } else if (key === "text_contrast") {
       control = document.createElement("div"); control.className = "contrast-control";
       const slider = document.createElement("input"); slider.type = "range";
@@ -1028,6 +1043,12 @@ const app = {
       slider.oninput = () => { output.textContent = slider.value + "%"; };
       slider.onchange = () => send({cmd:"setting", key, value:Number(slider.value)});
       control.append(slider, output);
+    } else if (key === "zoom") {
+      control=document.createElement("div");control.className="zoom-control";
+      const input=document.createElement("input");input.type="number";input.min=50;input.max=300;input.step=5;input.value=Math.round(value*100);
+      input.setAttribute("aria-labelledby",label.id);input.setAttribute("aria-describedby",help.id);
+      input.onchange=()=>{if(input.value&&input.checkValidity())app.setZoom(Number(input.value)/100);};
+      const suffix=document.createElement("span");suffix.textContent="%";suffix.setAttribute("aria-hidden","true");control.append(input,suffix);
     } else if (CHOICES[key]) {
       control = app.selectControl(CHOICES[key].map(choice => ({value:choice,label:choiceLabel(choice)})),value,
         next => send({cmd:"setting",key,value:next}), LABELS[key]?.[0] || key);
@@ -1051,6 +1072,7 @@ const app = {
       control.value = value;
     }
     control.setAttribute("aria-labelledby", label.id);
+    control.setAttribute("aria-describedby", help.id);
     control.dataset.setting = key;
     if (key === "close_to_tray" && !state.trayAvailable) { control.disabled = true; help.textContent = "System tray is available in the Windows build."; }
     if (!["DIV","BUTTON"].includes(control.tagName)) {
@@ -1066,10 +1088,18 @@ const app = {
     const reset = document.createElement("button");
     reset.className = "rst";
     reset.textContent = "\u21ba";
-    reset.title = "Reset " + (LABELS[key]?.[0] || key);
+    reset.title = "Reset " + (LABELS[key]?.[0] || key) + " to " + (key === "zoom" ? Math.round(fallback*100) + "%" : choiceLabel(String(fallback)));
     reset.setAttribute("aria-label", reset.title);
     reset.onclick = () => key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
     row.appendChild(reset);
+    if (key === "tab_highlight") {
+      const preview=document.createElement("div");preview.className="tab-preview";preview.setAttribute("role","img");preview.setAttribute("aria-label","Preview: Current note is the active tab");
+      for (const [name,active] of [["Other note.md",false],["Current note.md",true]]) {
+        const tab=document.createElement("div");tab.className="tab-example"+(active?" active":"");
+        const label=document.createElement("span");label.className="tab-label";label.textContent=name;tab.appendChild(label);preview.appendChild(tab);
+      }
+      row.appendChild(preview);
+    }
     return row;
   },
   warn(t) { $("pnote").textContent = t || "Changes apply as you make them."; }
