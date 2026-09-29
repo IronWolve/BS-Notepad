@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="pics/brand.png" width="112" alt="BS logo">
+  <img src="pics/brand-banner.png" width="520" alt="BS Notepad logo">
 </p>
 
 <h1 align="center">BS Notepad</h1>

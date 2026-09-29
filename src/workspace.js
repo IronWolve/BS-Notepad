@@ -491,7 +491,7 @@ app.help=open=>{
   if(open){helpFocus=document.activeElement;if($('options').classList.contains('show'))app.options(false);}
   $('help-overlay').classList.toggle('show',open);
   for(const id of ['bar','row','find'])$(id).inert=open;
-  if(open){$('help-logo').src=state.logoUrl||'';$('help-title').textContent=state.name;$('help-version').textContent='Version '+state.version+' · Help & shortcuts';$('help-github').href=state.githubUrl||'#';$('help-search').value='';app.drawHelp();$('help-search').focus();}
+  if(open){$('help-logo').src=state.helpLogoUrl||state.logoUrl||'';$('help-title').textContent=state.name;$('help-version').textContent='Version '+state.version+' · Help & shortcuts';$('help-github').href=state.githubUrl||'#';$('help-search').value='';app.drawHelp();$('help-search').focus();}
   else if(helpFocus?.isConnected&&helpFocus.offsetParent)helpFocus.focus();else $('b-menu').focus();
 };
 $('help-search').oninput=()=>app.drawHelp();

@@ -217,6 +217,7 @@ impl App {
             "name": root::app_name(),
             "platform":std::env::consts::OS,
             "logoUrl": assets::brand_url(),
+            "helpLogoUrl": assets::brand_banner_url(),
             "maximized": self.window.is_maximized(),
             "githubUrl": env!("CARGO_PKG_HOMEPAGE"),
             "version": env!("CARGO_PKG_VERSION"),

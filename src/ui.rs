@@ -208,7 +208,7 @@ body.auto.popup-open #bar { transform:none; }
 #help-overlay.show { display:flex; }
 #help-panel { width:min(980px,calc(100vw - 32px)); height:min(650px,calc(100vh - 32px)); min-width:440px; min-height:340px; max-width:98vw; max-height:96vh; display:flex; flex-direction:column; resize:both; overflow:hidden; background:var(--bg); border:1px solid var(--rule); border-radius:10px; box-shadow:0 20px 70px #0005; }
 #help-head { display:flex; align-items:center; gap:17px; padding:19px 23px; border-bottom:1px solid var(--rule); background:var(--panel); }
-#help-logo { width:84px; height:84px; object-fit:contain; }
+#help-logo { width:260px; max-width:42%; height:auto; object-fit:contain; flex-shrink:0; }
 #help-title { margin:0 0 5px; font-size:25px; }
 #help-version { margin:0; color:var(--dim); font-size:12px; }
 #help-close { margin-left:auto; align-self:flex-start; border:0; background:transparent; color:var(--dim); font-size:24px; }
@@ -603,7 +603,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
 </div></div>
 
 <div id="help-overlay"><section id="help-panel" role="dialog" aria-modal="true" aria-labelledby="help-title">
-  <header id="help-head"><img id="help-logo" alt="BS" width="84" height="84"><div><h2 id="help-title">BS Notepad</h2><p id="help-version"></p></div><button id="help-close" aria-label="Close help">×</button></header>
+  <header id="help-head"><img id="help-logo" alt="BS Notepad logo" width="260" height="102"><div><h2 id="help-title">BS Notepad</h2><p id="help-version"></p></div><button id="help-close" aria-label="Close help">×</button></header>
   <div id="help-search-row"><input id="help-search" aria-label="Search help" placeholder="Find a command, shortcut or setting…"></div>
   <div id="help-layout"><nav id="help-nav" aria-label="Help topics"></nav><div id="help-content" tabindex="0"></div></div>
   <footer id="help-foot"><a id="help-github" href="#">GitHub · IronWolve ↗</a><span>F1 opens Help</span><button id="help-done">Done</button></footer>
@@ -782,7 +782,7 @@ const app = {
   init(s) {
     state.hostReady=true;state.platform=s.platform||"";
     if(state.platform==="macos")for(const node of document.querySelectorAll("[title]"))node.title=shortcutLabel(node.title);
-    state.name = s.name; state.version = s.version; state.logoUrl = s.logoUrl; state.githubUrl = s.githubUrl; state.trayAvailable = s.trayAvailable;
+    state.name = s.name; state.version = s.version; state.logoUrl = s.logoUrl; state.helpLogoUrl = s.helpLogoUrl || s.logoUrl; state.githubUrl = s.githubUrl; state.trayAvailable = s.trayAvailable;
     document.title = s.name;
     $("options-title").textContent = "Options";
     $("footer-brand").textContent = s.name + " · " + s.version;
