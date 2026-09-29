@@ -24,6 +24,7 @@ mod theme;
 mod tray;
 mod tree;
 mod ui;
+mod workspace_files;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -81,6 +82,8 @@ enum UserEvent {
         revision: u64,
         changed: bool,
     },
+    QuickMatches(workspace_files::SearchResult),
+    FileOperation(workspace_files::OperationResult),
     RecoveryError(String),
     Dropped(PathBuf),
     #[cfg(target_os = "windows")]
@@ -104,6 +107,9 @@ struct App {
     documents: Documents,
     render_worker: jobs::RenderWorker,
     io: jobs::IoWorker,
+    workspace_worker: workspace_files::Worker,
+    quick_request: u64,
+    file_request: Option<u64>,
     generation: u64,
     tree_serial: u64,
     pending_fragment: String,
@@ -547,6 +553,74 @@ impl App {
         if !task.reload && !task.restore && !task.path.starts_with(&self.tree_dir) {
             if let Some(parent) = task.path.parent() {
                 self.send_tree(parent.into());
+            }
+        }
+    }
+
+    fn finish_file_operation(&mut self, completed: workspace_files::OperationResult) {
+        if self.file_request != Some(completed.request) {
+            return;
+        }
+        self.file_request = None;
+        match completed.result {
+            Err(error) => self.run_js(format!(
+                "window.app.fileOperation({});",
+                json!({"request":completed.request,"error":error})
+            )),
+            Ok((old, destination)) => {
+                let renamed = old.is_some();
+                if let Some(old) = old {
+                    for doc in &mut self.documents.tabs {
+                        if let Some(path) = &doc.path {
+                            if let Some(new) = workspace_files::rebase(path, &old, &destination) {
+                                doc.path = Some(new);
+                                if doc.dirty {
+                                    self.recovery_pending.insert(doc.id);
+                                }
+                            }
+                        }
+                    }
+                    for doc in &mut self.closed_tabs {
+                        if let Some(path) = &doc.path {
+                            if let Some(new) = workspace_files::rebase(path, &old, &destination) {
+                                doc.path = Some(new);
+                            }
+                        }
+                    }
+                    for path in self
+                        .settings
+                        .recents
+                        .iter_mut()
+                        .chain(self.settings.expanded_folders.iter_mut())
+                        .chain(std::iter::once(&mut self.settings.last_path))
+                    {
+                        if let Some(new) =
+                            workspace_files::rebase(Path::new(path), &old, &destination)
+                        {
+                            *path = new.to_string_lossy().into_owned();
+                        }
+                    }
+                    assets::set_scope(self.path.as_deref().and_then(Path::parent));
+                    self.flush_recovery();
+                    self.render_current(self.scroll);
+                    self.send_tabs();
+                    self.send_recents();
+                }
+                if !renamed {
+                    if let Some(parent) = destination.parent() {
+                        if parent != self.tree_dir {
+                            self.settings
+                                .expanded_folders
+                                .push(parent.to_string_lossy().into_owned());
+                        }
+                    }
+                }
+                self.run_js(format!(
+                    "window.app.fileOperation({});",
+                    json!({"request":completed.request,"path":destination.to_string_lossy(),"restoreTree":true})
+                ));
+                self.send_tree(self.tree_dir.clone());
+                self.persist_settings();
             }
         }
     }
@@ -1127,6 +1201,58 @@ impl App {
                 self.send_settings();
                 self.persist_settings();
             }
+            "quickSearch" => {
+                self.quick_request = value.get("request").and_then(|v| v.as_u64()).unwrap_or(0);
+                self.workspace_worker.search(workspace_files::Search {
+                    request: self.quick_request,
+                    root: self.tree_dir.clone(),
+                    query: value
+                        .get("query")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .chars()
+                        .take(256)
+                        .collect(),
+                    hidden: self.settings.show_hidden,
+                });
+            }
+            "cancelQuickSearch" => {
+                self.quick_request = self.quick_request.wrapping_add(1);
+                self.workspace_worker.cancel_search(self.quick_request);
+            }
+            "fileAction" => {
+                if self.startup_pending > 0
+                    || !matches!(
+                        value.get("kind").and_then(|v| v.as_str()),
+                        Some("rename" | "folder")
+                    )
+                {
+                    self.run_js(format!("window.app.fileOperation({});",json!({"request":value.get("request"),"error":"Wait for files to finish opening, then try again."})));
+                    return;
+                }
+                let request = value.get("request").and_then(|v| v.as_u64()).unwrap_or(0);
+                let mut path =
+                    PathBuf::from(value.get("path").and_then(|v| v.as_str()).unwrap_or(""));
+                if value.get("parent").and_then(|v| v.as_bool()) == Some(true) {
+                    path = path.parent().unwrap_or(&path).to_path_buf();
+                }
+                let operation = workspace_files::Operation {
+                    request,
+                    root: self.tree_dir.clone(),
+                    path,
+                    name: value
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    rename: value.get("kind").and_then(|v| v.as_str()) == Some("rename"),
+                };
+                if self.file_request.is_some() || !self.workspace_worker.operate(operation) {
+                    self.run_js(format!("window.app.fileOperation({});",json!({"request":request,"error":"Another file operation is still finishing."})));
+                } else {
+                    self.file_request = Some(request);
+                }
+            }
             "refreshTree" => self.send_tree(self.tree_dir.clone()),
             "openPath" => {
                 if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
@@ -1361,6 +1487,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proxy = event_loop.create_proxy();
     let render_worker = jobs::RenderWorker::new(proxy.clone());
     let io = jobs::IoWorker::new(proxy.clone());
+    let workspace_worker = workspace_files::Worker::new(proxy.clone());
 
     let handoff_proxy = proxy.clone();
     instance::listen(&root, move |paths| {
@@ -1529,6 +1656,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         preview_theme: None,
         render_worker,
         io,
+        workspace_worker,
+        quick_request: 0,
+        file_request: None,
         generation: 0,
         tree_serial: 0,
         pending_fragment: String::new(),
@@ -1570,6 +1700,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match result{Ok(loaded)=>app.finish_open(task,loaded),Err(error)=>app.notify(&format!("Cannot open {}: {}",task.path.display(),error))}
                 if restoring{app.startup_pending=app.startup_pending.saturating_sub(1);if app.startup_pending==0{if let Some(target)=app.startup_target.take(){if let Some(id)=app.documents.find_path(&target){app.activate_tab(id);}}app.persist_settings();}}
             },
+            Event::UserEvent(UserEvent::QuickMatches(result)) if result.request == app.quick_request => {
+                app.run_js(format!("window.app.quickMatches({});", json!(result)));
+            }
+            Event::UserEvent(UserEvent::FileOperation(result)) => app.finish_file_operation(result),
             Event::UserEvent(UserEvent::TreeLoaded{path,request,root,serial,result})=>{
                 if root{if serial==app.tree_serial{match result{Ok(entries)=>{if Path::new(&app.settings.workspace)!=path {app.settings.expanded_folders.clear();app.settings.tree_scroll=0.0;app.settings.tree_filter.clear();}app.tree_dir=path.clone();app.settings.workspace=path.to_string_lossy().into_owned();app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":entries,"view":{"expanded":app.settings.expanded_folders,"scroll":app.settings.tree_scroll,"filter":app.settings.tree_filter}})));app.persist_settings();},Err(error)=>app.notify(&format!("Cannot read folder: {}",error))}}}
                 else{let(entries,error)=match result{Ok(entries)=>(entries,None),Err(error)=>(Vec::new(),Some(error))};app.run_js(format!("window.app.setEntries({});",json!({"path":path.to_string_lossy(),"request":request,"entries":entries,"error":error})));}

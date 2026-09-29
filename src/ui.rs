@@ -114,6 +114,13 @@ article table { border-collapse:collapse; }
 article td,article th { border:1px solid color-mix(in srgb,var(--rule) 60%,var(--bg)); padding:5px 10px; }
 article img { max-width:100%; }
 article h1,article h2,article h3 { line-height:1.3; }
+article :is(h1,h2,h3,h4,h5,h6) { color:var(--heading-color,var(--fg)); }
+article :is(h1,h2) { text-shadow:var(--heading-shadow,none); }
+.heading-control { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.heading-control .select-control { flex:1 1 80px; min-width:80px; width:auto; }
+.heading-control input[type=color] { width:30px; height:28px; padding:2px; border:1px solid var(--rule); border-radius:4px; background:var(--panel); }
+.heading-control label { display:flex; align-items:center; gap:5px; color:var(--dim); font-size:12px; white-space:nowrap; }
+.heading-sample { flex-basis:100%; font-size:17px; font-weight:650; color:var(--heading-color,var(--fg)); text-shadow:var(--heading-shadow,none); }
 article mark { background:var(--accent); color:var(--bg); }
 article mark.on { outline:2px solid var(--fg); }
 .copy { position:absolute; top:6px; right:6px; opacity:0; background:var(--panel); color:var(--fg); border:1px solid var(--rule); border-radius:4px; padding:2px 8px; font:var(--ui-size) var(--ui-font); }
@@ -355,6 +362,25 @@ article th,article td { overflow-wrap:normal; }
 #replace-row button { flex-basis:auto; }
 #document-status { display:flex; gap:16px; justify-content:space-between; font-size:11px; padding:3px 12px; color:var(--dim); }
 #cursor-status { border:0; padding:0; background:transparent; color:inherit; }
+#quick-dialog,#file-dialog { color:var(--fg); background:var(--bg); border:1px solid var(--rule); border-radius:10px; padding:16px; box-shadow:0 12px 36px #0004; }
+#quick-dialog { width:min(560px,calc(100vw - 48px)); }
+#quick-dialog::backdrop,#file-dialog::backdrop { background:#0004; }
+#quick-heading,#file-title { margin:0; font-size:16px; font-weight:600; }
+.dialog-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
+.dialog-heading button { color:var(--dim); border:0; background:transparent; padding:4px 7px; }
+#quick-input,#file-name { width:100%; box-sizing:border-box; background:var(--panel); color:var(--fg); border:1px solid var(--rule); border-radius:6px; padding:9px 10px; font:inherit; }
+#quick-list { max-height:min(330px,50vh); overflow:auto; margin:9px -5px 0; }
+#quick-list button { width:100%; display:flex; align-items:center; gap:10px; padding:9px 10px; border:0; border-radius:5px; color:var(--fg); background:transparent; text-align:left; }
+#quick-list button[aria-selected=true],#quick-list button:hover { background:var(--selected); }
+.quick-file-label { min-width:0; flex:1; }
+.quick-file-label strong,.quick-file-label small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.quick-file-label strong { font-weight:500; }.quick-file-label small { color:var(--dim); font-size:11px; margin-top:3px; }
+#quick-status { color:var(--dim); font-size:12px; margin:9px 0 0; min-height:1.4em; }
+#file-dialog { width:min(380px,calc(100vw - 48px)); }
+#file-name-label { display:block; margin:10px 0 6px; color:var(--dim); }
+#file-error { color:var(--fg); font-size:12px; min-height:1.5em; margin:9px 0; }
+.dialog-actions { display:flex; justify-content:flex-end; gap:8px; }
+.dialog-actions button { padding:7px 12px; border:1px solid var(--rule); border-radius:5px; background:var(--panel); color:var(--fg); }
 #line-dialog { color:var(--fg); background:var(--bg); border:1px solid var(--rule); border-radius:10px; }
 #line-form { display:flex; align-items:center; gap:10px; flex-wrap:wrap; max-width:420px; }
 #line-number { width:110px; }
@@ -400,6 +426,7 @@ body.resizing-sidebar #side { transition:none; }
 #panel { width:min(920px,calc(100vw - 32px)); }
 #sets { padding:4px 18px 12px; }
 .set { padding:10px 0; gap:10px; grid-template-columns:minmax(120px,1fr) minmax(140px,230px) 24px; }
+#sets[data-group="Appearance"] .set { padding:6px 0; }
 .set:last-child { border-bottom:0; }
 .set .sub { font-size:11px; line-height:1.4; max-width:46ch; }
 .theme-select { gap:9px; }
@@ -589,6 +616,8 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
   <div id="document-status"><button id="cursor-status" title="Go to line (Ctrl+G)">Read mode</button><span id="format-status"></span></div>
   </div>
 </div>
+<dialog id="quick-dialog" aria-labelledby="quick-heading"><div class="dialog-heading"><h2 id="quick-heading">Quick Open</h2><button id="quick-close" aria-label="Close Quick Open">×</button></div><input id="quick-input" type="search" maxlength="256" autocomplete="off" placeholder="Find a file by name or path…" role="combobox" aria-expanded="true" aria-controls="quick-list" aria-autocomplete="list" aria-label="Find a workspace file"><div id="quick-list" role="listbox" aria-label="Matching files"></div><p id="quick-status" role="status"></p></dialog>
+<dialog id="file-dialog" aria-labelledby="file-title"><form id="file-form"><h2 id="file-title">Rename</h2><label id="file-name-label" for="file-name">Name</label><input id="file-name" required maxlength="255" autocomplete="off" aria-describedby="file-error"><p id="file-error" role="alert"></p><div class="dialog-actions"><button type="button" id="file-cancel">Cancel</button><button type="submit" id="file-submit">Rename</button></div></form></dialog>
 <dialog id="line-dialog"><form id="line-form"><label for="line-number">Go to line</label><input id="line-number" type="number" min="1" required><button type="submit">Go</button><button type="button" id="line-cancel">Cancel</button></form></dialog>
 
 <div id="options"><div id="panel" role="dialog" aria-modal="true" aria-labelledby="options-title">
@@ -726,15 +755,16 @@ let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"
 // Grouped so each screen is short. Remembered state - window size, last file,
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
-  Appearance: ["theme", "text_contrast", "tab_shape", "tab_highlight", "icon_style", "icon_visibility", "chrome", "zoom"],
+  Appearance: ["theme", "text_contrast", "heading_styles", "tab_shape", "tab_highlight", "icon_style", "icon_visibility", "chrome", "zoom"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "files_size", "body_size",
           "code_size", "line_height", "ligatures"],
   Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
-  Editor: ["word_wrap", "tab_size", "minimap", "status_bar"],
+  Editor: ["word_wrap", "tab_size", "tab_style", "continue_lists", "minimap", "status_bar"],
   Document: ["view_mode", "syntax_colour", "highlight_limit_kb",
              "plain_text_above_mb", "remote_images"],
 };
 const CHOICES = {
+  tab_style: ["spaces", "tabs"],
   view_mode: ["rendered", "source"],
   chrome: ["auto", "always"],
   sidebar: ["auto", "always", "off"],
@@ -748,9 +778,12 @@ const LABELS = {
  status_bar:["Document status","Show line, column, encoding and line endings."],
  remote_images:["Remote images","Load pictures hosted on websites in documents."],
  minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
+ heading_styles:["Document headings","This theme only. Soft shadow applies to H1/H2."],
+ tab_style:["Indent with","Insert spaces or actual tab characters."],
+ continue_lists:["Continue Markdown lists","Continue bullets, numbered lists, tasks and quotes when pressing Enter."],
  text_contrast:["Text contrast","Strengthen text without changing the background."],
  icon_style:["Toolbar icons","Choose a line weight or color treatment."],
- icon_visibility:["Icon visibility","Dim or brighten toolbar icons. Hover and focus stay clear."],
+ icon_visibility:["Icon visibility","Quiet icons; hover and focus stay clear."],
  tab_shape:["Tab shape","Rounded corners or straight edges."],
  tab_highlight:["Active tab","A quiet accent for the document you are using."],
  theme:["Color theme","Preview any palette; click a choice to save it."],
@@ -764,7 +797,7 @@ const LABELS = {
  backup_retention:["Keep release backups","Used by Clean history; keep at least one rollback copy."],
  restore_last_file:["Reopen on startup","Continue with your last document, or your saved tabs when enabled."],
  close_to_tray:["Close to system tray","Keep the note open in the Windows tray. Use Quit to exit."],
- word_wrap:["Word wrap","Wrap long lines in the editor."], tab_size:["Tab width","Spaces inserted by Tab, from 1 to 8."],
+ word_wrap:["Word wrap","Wrap long lines in the editor."], tab_size:["Tab width","Indent width, from 1 to 8 columns."],
  ui_font:["Interface font","Toolbar, file browser and options."], body_font:["Reading font","Rendered Markdown paragraphs and headings."], code_font:["Code font","Editor and code blocks; monospace fonts."],
  files_size:["Files size","File names, folders, and outline headings in pixels (12–48)."],
  ui_size:["Interface size","Pixels."], body_size:["Reading size","Pixels before zoom."], code_size:["Code size","Pixels before zoom."],
@@ -774,7 +807,10 @@ const LABELS = {
  highlight_limit_kb:["Highlight limit","Skip syntax highlighting above this size in KB."],
  plain_text_above_mb:["Large-file preview threshold","Above this size in MB, open a read-only preview of the first 256 KB. Maximum editable file size is 32 MB."]
 };
-const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], icon_visibility:[20,100,5], ui_size:[10,28,1], files_size:[12,48,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
+const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], heading_styles:["Document headings","This theme only. Soft shadow applies to H1/H2."],
+ tab_style:["Indent with","Insert spaces or actual tab characters."],
+ continue_lists:["Continue Markdown lists","Continue bullets, numbered lists, tasks and quotes when pressing Enter."],
+ text_contrast:[0,100,5], icon_visibility:[20,100,5], ui_size:[10,28,1], files_size:[12,48,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
 const choiceLabel = x => ({rounded:"Rounded",square:"Square",soft:"Soft tint",line:"Underline",glow:"Soft glow",always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
@@ -805,10 +841,12 @@ const app = {
     r.setProperty("--panel", t.panel); r.setProperty("--bar", t.bar);
     r.setProperty("--rule", t.rule); r.setProperty("--link", t.link);
     r.setProperty("--dim", t.dim); r.setProperty("--accent", t.accent);
+    state.appliedTheme=t;app.applyHeadingStyle?.();
   },
   applySettings(s) {
     if (!["files", "outline"].includes(s.sidebar_tab)) s = {...s, sidebar_tab:"files"};
     state.settings = s;
+    app.applyHeadingStyle?.();
     const filesWereVisible = $("pane-files").clientHeight > 0;
     const r = document.documentElement.style;
     r.setProperty("--ui-font", s.ui_font); r.setProperty("--body-font", s.body_font);
@@ -917,7 +955,8 @@ const app = {
     send({ cmd:"expand", path, request });
   },
   setTree(d) {
-    const pane = $("pane-files"), previous = samePath(state.workspace || "", d.dir) ? pane.firstElementChild : null;
+    const pane = $("pane-files"), previous = !state.restoreTreeAfterFileAction && samePath(state.workspace || "", d.dir) ? pane.firstElementChild : null;
+    state.restoreTreeAfterFileAction=false;
     const view = app.treeView();
     pendingFolders.clear();
     state.workspace = d.dir;
@@ -937,6 +976,7 @@ const app = {
       pane.scrollTop = state.treeScroll || 0;
     }
     app.continueTreeRestore?.();
+    app.focusPendingFile?.();
   },
   entries(list, previous) {
     const box = previous || document.createElement("div");
@@ -995,6 +1035,7 @@ const app = {
     app.filterTree();
     app.restoreTreeView(view, pending.el);
     app.continueTreeRestore?.();
+    app.focusPendingFile?.();
     app.saveTreeState?.();
   },
   filterTree() {
@@ -1123,6 +1164,15 @@ const app = {
       const name=document.createElement("span");name.className="selected-label theme-name";name.textContent=current?.name || value;
       const arrow=document.createElement("span");arrow.className="select-arrow";arrow.textContent="▾";arrow.setAttribute("aria-hidden","true");
       control.append(swatch,name,arrow);control.onclick=()=>app.chooseTheme(control);
+    } else if (key === "heading_styles") {
+      const themeId=state.appliedTheme?.id || state.settings.theme;
+      const style=state.settings.heading_styles?.[themeId] || {};
+      control=document.createElement("div");control.className="heading-control";
+      const mode=app.selectControl([{value:"auto",label:"Automatic"},{value:"custom",label:"Custom"}],style.color?"custom":"auto",next=>app.saveHeadingStyle({color:next==="auto"?"":state.appliedTheme?.fg||"#222222"}),"Heading color");
+      control.append(mode);
+      if(style.color){const color=document.createElement("input");color.type="color";color.value=style.color;color.setAttribute("aria-label","Custom heading color");color.onchange=()=>app.saveHeadingStyle({color:color.value});control.append(color);}
+      const shadow=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!style.shadow;toggle.onchange=()=>app.saveHeadingStyle({shadow:toggle.checked});shadow.append(toggle,document.createTextNode("Soft shadow"));control.append(shadow);
+      const sample=document.createElement("span");sample.className="heading-sample";sample.textContent="Heading preview";control.append(sample);
     } else if (key === "text_contrast" || key === "icon_visibility") {
       control = document.createElement("div"); control.className = "contrast-control";
       const slider = document.createElement("input"); slider.type = "range";
@@ -1179,8 +1229,9 @@ const app = {
     reset.className = "rst";
     reset.textContent = "\u21ba";
     reset.title = "Reset " + (LABELS[key]?.[0] || key) + " to " + (key === "zoom" ? Math.round(fallback*100) + "%" : key === "icon_style" ? ICON_STYLE_LABELS[fallback] : choiceLabel(String(fallback)));
+    if(key === "heading_styles") reset.title="Reset headings for this theme";
     reset.setAttribute("aria-label", reset.title);
-    reset.onclick = () => key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
+    reset.onclick = () => key === "heading_styles" ? app.saveHeadingStyle(null) : key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
     row.appendChild(reset);
     if (key === "tab_highlight") {
       const preview=document.createElement("div");preview.className="tab-preview";preview.setAttribute("role","img");preview.setAttribute("aria-label","Preview: Current note is the active tab");
@@ -1323,7 +1374,7 @@ $("doc").onscroll = () => {
 };
 
 document.addEventListener("keydown", e => {
-  if($("line-dialog").open)return;
+  if($("line-dialog").open || $("quick-dialog").open || $("file-dialog").open)return;
   const ctrl = e.ctrlKey || e.metaKey;
   if ($("options").classList.contains("show")) {
     if (e.key === "Escape") { e.preventDefault(); app.options(false); }
@@ -1353,7 +1404,9 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Escape") { $("find-close").onclick(); app.options(false); }
   else if (e.key === "F3") step(e.shiftKey ? -1 : 1);
 });
+/* EDITING_UI */
 /* WORKSPACE_UI */
+/* WORKSPACE_TOOLS */
 /* IMAGE_UI */
 let readyAttempts=0;
 app.requestReady=()=>{if(state.hostReady)return;try{send({cmd:"ready"});}catch(error){window.startupErrors.push(String(error));}if(++readyAttempts<20)setTimeout(app.requestReady,250);};
@@ -1372,7 +1425,9 @@ pub fn shell() -> String {
             .finish()
     );
     SHELL
+        .replace("/* EDITING_UI */", include_str!("editing.js"))
         .replace("/* WORKSPACE_UI */", include_str!("workspace.js"))
+        .replace("/* WORKSPACE_TOOLS */", include_str!("workspace_tools.js"))
         .replace("/* FIND_UI */", include_str!("find.js"))
         .replace("/* IMAGE_UI */", include_str!("image_viewer.js"))
         .replace("__SCRIPT_NONCE__", &nonce)

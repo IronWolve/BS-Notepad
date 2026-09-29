@@ -36,6 +36,17 @@ const MENU_PATHS={
 };
 function menuIcon(name){return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(MENU_PATHS[name]||MENU_PATHS.note)+'</svg>';}
 
+app.applyHeadingStyle=()=>{
+ const t=state.appliedTheme,style=state.settings.heading_styles?.[t?.id||state.settings.theme]||{},root=document.documentElement.style;
+ root.setProperty('--heading-color',/^#[0-9a-f]{6}$/i.test(style.color||'')?style.color:'var(--fg)');
+ root.setProperty('--heading-shadow',style.shadow?(t?.dark?'0 1px 2px #0005':'0 1px 2px #0002'):'none');
+};
+app.saveHeadingStyle=change=>{
+ const id=state.appliedTheme?.id||state.settings.theme,styles={...(state.settings.heading_styles||{})};
+ if(change===null)delete styles[id];else styles[id]={...(styles[id]||{}),...change};
+ send({cmd:'setting',key:'heading_styles',value:styles});
+};
+
 function wireEditor(node) {
   node.oninput = () => {
     const revision = Number(node.dataset.revision || 0) + 1;
@@ -54,11 +65,7 @@ function wireEditor(node) {
     node._sentText=next;
     app.refreshFind?.(); app.updateStatus?.(); app.scheduleMap();
   };
-  node.onkeydown = e => {
-    if(e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      e.preventDefault(); document.execCommand('insertText',false,' '.repeat(state.settings.tab_size || 4));
-    }
-  };
+  node.onkeydown = e => app.editingKey(e,node);
   const rememberView=()=>{if(state.activeTab===Number(node.dataset.documentId)&&!state.renderPending)send({cmd:'viewState'});};
   node.onscroll = () => { app.mapPosition(); rememberView(); };
   node.onselect = node.onkeyup = rememberView;
@@ -335,6 +342,8 @@ function fileMenu(event,row) {
     {label:'Open in new tab',icon:'newTab',action:()=>send({cmd:'openPath',path,newTab:true})}
   ];
   entries.push(null,
+    {label:'Rename…',icon:'edit',action:()=>app.fileAction('rename',path,folder)},
+    {label:'New folder…',icon:'workspace',action:()=>app.fileAction('folder',path,folder)},null,
     {label:'Copy full path',icon:'copy',action:()=>copyText(cleanPath(path))},
     {label:'Copy filename',icon:'filename',action:()=>copyText(fileName(path))},
     {label:folder?'Open folder in file manager':'Open containing folder',icon:'open',action:()=>send({cmd:'showFolder',path})},
@@ -472,7 +481,7 @@ const HELP = [
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
-  ['New tab','Ctrl+T / Ctrl+N'],['Open file','Ctrl+O'],['Open folder','Ctrl+Shift+O'],['Save','Ctrl+S'],['Save a copy','Ctrl+Shift+S'],['Close tab','Ctrl+W'],['Next / previous tab','Ctrl+Tab / Ctrl+Shift+Tab'],['Edit / preview','Ctrl+E'],['Find','Ctrl+F'],['Replace','Ctrl+H'],['Go to line','Ctrl+G'],['Reopen closed tab','Ctrl+Shift+T'],['Zoom in','Ctrl+Plus'],['Zoom out','Ctrl+Minus'],['Reset zoom','Ctrl+0'],['Mouse zoom','Ctrl+wheel'],['Show / hide files','Ctrl+B'],['Reload file','F5'],['Options','Ctrl+,'],['Help','F1'],['Main menu','Alt+F'],['Quit','Ctrl+Q']
+  ['New tab','Ctrl+T / Ctrl+N'],['Open file','Ctrl+O'],['Quick Open','Ctrl+P'],['Open folder','Ctrl+Shift+O'],['Save','Ctrl+S'],['Save a copy','Ctrl+Shift+S'],['Close tab','Ctrl+W'],['Next / previous tab','Ctrl+Tab / Ctrl+Shift+Tab'],['Edit / preview','Ctrl+E'],['Find','Ctrl+F'],['Replace','Ctrl+H'],['Go to line','Ctrl+G'],['Reopen closed tab','Ctrl+Shift+T'],['Zoom in','Ctrl+Plus'],['Zoom out','Ctrl+Minus'],['Reset zoom','Ctrl+0'],['Mouse zoom','Ctrl+wheel'],['Show / hide files','Ctrl+B'],['Reload file','F5'],['Options','Ctrl+,'],['Help','F1'],['Main menu','Alt+F'],['Quit','Ctrl+Q']
  ]}
 ];
 app.drawHelp=()=>{
@@ -506,7 +515,9 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:state.name||'BS Notepad',brand:true,hint:'Help · F1',action:()=>app.help(true)},null,
  {label:'New note',icon:'note',hint:'Ctrl+N',action:()=>$('b-new').click()},
  {label:'Open files…',icon:'open',hint:'Ctrl+O',action:()=>$('b-open').click()},
+ {label:'Quick Open…',icon:'find',hint:'Ctrl+P',action:()=>app.quickOpen()},
  {label:'Recent files…',icon:'recent',action:()=>app.showRecents()},
+ {label:'New folder…',icon:'workspace',action:()=>app.fileAction('folder',state.workspace,true)},
  {label:'Choose a workspace folder…',icon:'workspace',action:()=>$('folder-open').click()},null,
  {label:'Save edits',icon:'save',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+S',action:()=>$('b-save').click()},
  {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
@@ -659,7 +670,7 @@ document.fonts?.ready.then(()=>app.scheduleReaderLayout());
 
 document.addEventListener('pointerdown',e=>{if(!$('menu-popup').hidden&&!$('menu-popup').contains(e.target)&&e.target!==menuOrigin&&!menuOrigin?.contains(e.target))closeMenu(false);if(!$('choice-popup').hidden&&!$('choice-popup').contains(e.target)&&e.target!==choiceOrigin&&!choiceOrigin?.contains(e.target))closeChoices(false);});
 document.addEventListener('keydown',e=>{
- if($('line-dialog').open)return;
+ if($('line-dialog').open||$('quick-dialog').open||$('file-dialog').open)return;
  const ctrl=e.ctrlKey||e.metaKey;
  const popup=!$('menu-popup').hidden?$('menu-popup'):!$('choice-popup').hidden?$('choice-popup'):null;
  if(popup){
@@ -681,6 +692,7 @@ document.addEventListener('keydown',e=>{
  }
  if(e.key==='F1'){e.preventDefault();e.stopImmediatePropagation();app.help(true);return;}
  if($('options').classList.contains('show'))return;
+ if(ctrl&&!e.altKey&&!e.shiftKey&&e.key.toLowerCase()==='p'){e.preventDefault();e.stopImmediatePropagation();app.quickOpen();return;}
  if(e.altKey&&e.key.toLowerCase()==='f'){e.preventDefault();e.stopImmediatePropagation();mainMenu();return;}
  if(ctrl&&!e.shiftKey&&e.key.toLowerCase()==='t'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'new'});}
  else if(ctrl&&e.key.toLowerCase()==='w'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'closeTab',id:state.activeTab});}

@@ -17,7 +17,7 @@ const TEXTUAL: &[&str] = &[
     "conf", "cfg", "log", "csv",
 ];
 
-fn openable(path: &Path) -> bool {
+pub(crate) fn openable(path: &Path) -> bool {
     if crate::assets::image_type(path).is_some() {
         return true;
     }

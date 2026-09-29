@@ -19,6 +19,7 @@
 !/src/
 /src/*
 !/src/assets.rs
+!/src/editing.js
 !/src/documents.rs
 !/src/find.js
 !/src/fonts.rs
@@ -41,6 +42,8 @@
 !/src/tree.rs
 !/src/ui.rs
 !/src/workspace.js
+!/src/workspace_files.rs
+!/src/workspace_tools.js
 
 # Local build and test inputs are not part of the public checkout.
 /.cargo/

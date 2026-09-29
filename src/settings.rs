@@ -43,6 +43,14 @@ pub struct SessionTab {
     pub image_view: Option<ImageView>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct HeadingStyle {
+    /// Empty means the current theme's readable body color.
+    pub color: String,
+    pub shadow: bool,
+}
+
 pub const RECENT_MAX: usize = 15;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -67,9 +75,12 @@ pub struct Settings {
     pub status_bar: bool,
     pub word_wrap: bool,
     pub tab_size: u32,
+    pub tab_style: String,
+    pub continue_lists: bool,
     pub close_to_tray: bool,
     pub theme: String,
     pub text_contrast: u32,
+    pub heading_styles: std::collections::BTreeMap<String, HeadingStyle>,
     pub tab_shape: String,
     pub tab_highlight: String,
     pub icon_style: String,
@@ -128,9 +139,12 @@ impl Default for Settings {
             status_bar: true,
             word_wrap: true,
             tab_size: 4,
+            tab_style: "spaces".into(),
+            continue_lists: true,
             close_to_tray: false,
             theme: "dark".into(),
             text_contrast: 0,
+            heading_styles: std::collections::BTreeMap::new(),
             tab_shape: "rounded".into(),
             tab_highlight: "soft".into(),
             icon_style: "soft".into(),
@@ -264,6 +278,22 @@ impl Settings {
         self.zoom = self.zoom.clamp(0.5, 3.0);
         self.sidebar_width = self.sidebar_width.clamp(180, 640);
         self.tab_size = self.tab_size.clamp(1, 8);
+        if !["spaces", "tabs"].contains(&self.tab_style.as_str()) {
+            self.tab_style = "spaces".into();
+        }
+        let themes = crate::theme::builtin();
+        self.heading_styles.retain(|id, style| {
+            if !(style.color.len() == 7
+                && style.color.starts_with('#')
+                && style.color.as_bytes()[1..]
+                    .iter()
+                    .all(u8::is_ascii_hexdigit))
+            {
+                style.color.clear();
+            }
+            style.color.make_ascii_lowercase();
+            themes.iter().any(|theme| theme.id == *id) && (!style.color.is_empty() || style.shadow)
+        });
         self.highlight_limit_kb = self.highlight_limit_kb.clamp(1, 4096);
         self.plain_text_above_mb = self.plain_text_above_mb.clamp(1, 32);
         if !["always", "auto"].contains(&self.chrome.as_str()) {
