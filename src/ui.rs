@@ -127,7 +127,11 @@ article :is(h1,h2) { text-shadow:var(--heading-shadow,none); }
 .heading-control .select-control { flex:1 1 80px; min-width:80px; width:auto; }
 .heading-control input[type=color] { width:30px; height:28px; padding:2px; border:1px solid var(--rule); border-radius:4px; background:var(--panel); }
 .heading-control label { display:flex; align-items:center; gap:5px; color:var(--dim); font-size:12px; white-space:nowrap; }
-.heading-sample { flex-basis:100%; font-size:17px; font-weight:650; color:var(--heading-color,var(--fg)); text-shadow:var(--heading-shadow,none); }
+.heading-control .heading-intensity { display:flex; align-items:center; flex-basis:100%; gap:8px; }
+.heading-intensity input[type=range] { flex:1; width:0; min-width:0; height:18px; padding:0; accent-color:var(--accent); }
+.heading-intensity output { min-width:4ch; text-align:right; font-variant-numeric:tabular-nums; }
+.heading-intensity.inactive input[type=range],.heading-intensity.inactive output { opacity:.5; }
+.heading-sample { flex:0 0 auto; font-size:17px; font-weight:650; color:var(--heading-color,var(--fg)); text-shadow:var(--heading-shadow,none); }
 article mark { background:var(--accent); color:var(--mark-fg,var(--fg)); }
 article mark.on { outline:2px solid var(--fg); }
 .copy { position:absolute; top:6px; right:6px; opacity:0; background:var(--panel); color:var(--fg); border:1px solid var(--rule); border-radius:4px; padding:2px 8px; font:var(--ui-size) var(--ui-font); }
@@ -681,7 +685,7 @@ function scalarText(value) {
 }
 const send = o => {
  for(const key of ['text','insert'])if(typeof o[key]==='string'){const clean=scalarText(o[key]);if(clean!==o[key]){o={...o,[key]:clean};window.app?.note('An incomplete character was replaced so the note can be saved safely.');}}
- if(o.cmd === "quit" || o.cmd === "closeWindow") app.flushZoom?.();
+ if(o.cmd === "quit" || o.cmd === "closeWindow") { app.flushZoom?.(); app.flushHeadingStyle?.(); }
  const fromTab=o.fromTab??state.activeTab,editor=fromTab===state.activeTab?$("text"):editorNodes.get(fromTab),doc=$("doc");
  const view={};
  if(editor?.dataset.ready==='true'){view.selectionStart=editor.selectionStart;view.selectionEnd=editor.selectionEnd;if(editor.clientHeight>0)view.editorScroll=editor.scrollTop;}
@@ -1219,14 +1223,20 @@ const app = {
       const arrow=document.createElement("span");arrow.className="select-arrow";arrow.textContent="▾";arrow.setAttribute("aria-hidden","true");
       control.append(swatch,name,arrow);control.onclick=()=>app.chooseTheme(control);
     } else if (key === "heading_styles") {
-      const themeId=state.settings.theme;
+      const themeId=app.headingTheme();
       const style=state.settings.heading_styles?.[themeId] || {};
       control=document.createElement("div");control.className="heading-control";
       const mode=app.selectControl([{value:"auto",label:"Automatic"},{value:"custom",label:"Custom"}],style.color?"custom":"auto",next=>app.saveHeadingStyle({color:next==="auto"?"":state.appliedTheme?.fg||"#222222"}),"Heading color");
       control.append(mode);
       if(style.color){const color=document.createElement("input");color.type="color";color.value=style.color;color.setAttribute("aria-label","Custom heading color");color.onchange=()=>app.saveHeadingStyle({color:color.value});control.append(color);}
-      const shadow=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!style.shadow;toggle.onchange=()=>app.saveHeadingStyle({shadow:toggle.checked});shadow.append(toggle,document.createTextNode("Soft shadow"));control.append(shadow);
-      const sample=document.createElement("span");sample.className="heading-sample";sample.textContent="Heading preview";control.append(sample);
+      const shadow=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.id="heading-shadow-toggle";toggle.checked=!!style.shadow;shadow.append(toggle,document.createTextNode("Soft shadow"));
+      const intensity=document.createElement("div");intensity.className="heading-intensity";intensity.title="Shadow intensity";
+      const slider=document.createElement("input"),amount=document.createElement("output");slider.type="range";slider.id="heading-shadow-intensity";slider.min=0;slider.max=100;slider.step=5;slider.value=style.shadow_intensity??50;slider.setAttribute("aria-label","Header shadow intensity");
+      const sync=()=>{slider.disabled=!toggle.checked;intensity.classList.toggle("inactive",!toggle.checked);amount.textContent=slider.value+"%";slider.setAttribute("aria-valuetext",amount.textContent);};
+      toggle.onchange=()=>{app.saveHeadingStyle({shadow:toggle.checked});sync();};
+      slider.oninput=()=>{sync();app.saveHeadingStyle({shadow_intensity:Number(slider.value)},true);};slider.onchange=app.flushHeadingStyle;
+      const sample=document.createElement("span");sample.className="heading-sample";sample.textContent="Aa";sample.title="Heading preview";sample.setAttribute("aria-hidden","true");control.append(sample);
+      intensity.append(shadow,slider,amount);control.append(intensity);sync();
     } else if (key === "text_contrast" || key === "icon_visibility") {
       control = document.createElement("div"); control.className = "contrast-control";
       const slider = document.createElement("input"); slider.type = "range";
@@ -1386,7 +1396,7 @@ $("b-opts").onclick = () => app.options(true);
 $("opt-x").onclick = () => app.options(false);
 $("options").onclick = e => { if (e.target === $("options")) app.options(false); };
 $("opt-close").onclick = () => app.options(false);
-$("opt-reset").onclick = () => { if ($("opt-reset").dataset.confirm) { app.clearPendingZoom(); app.clearThemePreview(); send({cmd:"resetSettings"}); $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; } else { $("opt-reset").dataset.confirm="1"; $("opt-reset").textContent="Confirm reset"; } };
+$("opt-reset").onclick = () => { if ($("opt-reset").dataset.confirm) { app.clearPendingZoom(); app.clearThemePreview(); app.cancelHeadingSave(); send({cmd:"resetSettings"}); $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; } else { $("opt-reset").dataset.confirm="1"; $("opt-reset").textContent="Confirm reset"; } };
 $("search").oninput = () => app.drawOptions();
 $("b-zoomreset").onclick = () => app.setZoom(1);
 $("b-zoomin").onclick = () => app.adjustZoom(1);

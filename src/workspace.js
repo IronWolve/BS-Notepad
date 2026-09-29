@@ -36,15 +36,27 @@ const MENU_PATHS={
 };
 function menuIcon(name){return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(MENU_PATHS[name]||MENU_PATHS.note)+'</svg>';}
 
+let pendingHeadingStyles=null,headingSaveTimer;
+app.headingTheme=()=>state.previewTheme||state.settings.theme;
+const headingSignature=styles=>JSON.stringify(Object.entries(styles||{}).map(([id,style])=>[id,{color:(style.color||'').toLowerCase(),shadow:!!style.shadow,shadow_intensity:Math.max(0,Math.min(100,Number(style.shadow_intensity??50)))}]).filter(([,style])=>style.color||style.shadow||style.shadow_intensity!==50).sort(([a],[b])=>a.localeCompare(b)));
 app.applyHeadingStyle=()=>{
- const t=state.appliedTheme,style=state.settings.heading_styles?.[t?.id||state.settings.theme]||{},root=document.documentElement.style;
+ const t=state.appliedTheme,style=state.settings.heading_styles?.[t?.id||app.headingTheme()]||{},root=document.documentElement.style;
  root.setProperty('--heading-color',/^#[0-9a-f]{6}$/i.test(style.color||'')?style.color:'var(--fg)');
- root.setProperty('--heading-shadow',style.shadow?(t?.dark?'0 1px 2px #0005':'0 1px 2px #0002'):'none');
+ const strength=Math.max(0,Math.min(100,Number(style.shadow_intensity??50)))/100;
+ root.setProperty('--heading-shadow',style.shadow&&strength>0?`0 1px ${1+2*strength}px rgba(0,0,0,${((t?.dark?0.66:0.30)*strength).toFixed(3)})`:'none');
 };
-app.saveHeadingStyle=change=>{
- const id=state.settings.theme,styles={...(state.settings.heading_styles||{})};
- if(change===null)delete styles[id];else styles[id]={...(styles[id]||{}),...change};
- send({cmd:'setting',key:'heading_styles',value:styles});
+app.flushHeadingStyle=()=>{
+ clearTimeout(headingSaveTimer);headingSaveTimer=null;
+ if(pendingHeadingStyles!==null)send({cmd:'setting',key:'heading_styles',value:pendingHeadingStyles});
+};
+app.cancelHeadingSave=()=>{clearTimeout(headingSaveTimer);headingSaveTimer=null;pendingHeadingStyles=null;};
+app.saveHeadingStyle=(change,defer=false)=>{
+ const id=app.headingTheme(),styles={...(state.settings.heading_styles||{})};
+ if(change===null)delete styles[id];else styles[id]={color:'',shadow:false,shadow_intensity:50,...(styles[id]||{}),...change};
+ // Keep rapid checkbox/slider edits together while older preference replies arrive.
+ state.settings={...state.settings,heading_styles:styles};pendingHeadingStyles=styles;app.applyHeadingStyle();
+ clearTimeout(headingSaveTimer);
+ if(defer)headingSaveTimer=setTimeout(app.flushHeadingStyle,150);else app.flushHeadingStyle();
 };
 
 function wireEditor(node) {
@@ -530,7 +542,7 @@ $('help-overlay').onclick=e=>{if(e.target===$('help-overlay'))app.help(false);};
 $('help-github').onclick=e=>{e.preventDefault();if(state.githubUrl)send({cmd:'external',url:state.githubUrl});};
 $('footer-brand').onclick=()=>app.help(true);
 const originalOptions=app.options;
-app.options=open=>{closeChoices(false);closeMenu(false);if(open&&$('help-overlay').classList.contains('show'))app.help(false);originalOptions(open);};
+app.options=open=>{if(!open)app.flushHeadingStyle();closeChoices(false);closeMenu(false);if(open&&$('help-overlay').classList.contains('show'))app.help(false);originalOptions(open);};
 
 function mainMenu(){showMenu($('b-menu'),[
  {label:state.name||'BS Notepad',brand:true,hint:'Help · F1',action:()=>app.help(true)},null,
@@ -636,6 +648,10 @@ document.addEventListener('wheel',event=>{
 },{passive:false});
 const originalSettings=app.applySettings;
 app.applySettings=settings=>{
+ if(pendingHeadingStyles!==null){
+  if(headingSignature(settings.heading_styles)===headingSignature(pendingHeadingStyles))pendingHeadingStyles=null;
+  else settings={...settings,heading_styles:pendingHeadingStyles};
+ }
  if(zoomTarget!==null){
    if(zoomTimer===null&&Math.abs(settings.zoom-zoomTarget)<.0001)zoomTarget=null;
    else settings={...settings,zoom:zoomTarget};

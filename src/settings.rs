@@ -43,12 +43,22 @@ pub struct SessionTab {
     pub image_view: Option<ImageView>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct HeadingStyle {
     /// Empty means the current theme's readable body color.
     pub color: String,
     pub shadow: bool,
+    pub shadow_intensity: u32,
+}
+impl Default for HeadingStyle {
+    fn default() -> Self {
+        Self {
+            color: String::new(),
+            shadow: false,
+            shadow_intensity: 50,
+        }
+    }
 }
 
 pub const RECENT_MAX: usize = 15;
@@ -387,6 +397,7 @@ impl Settings {
         }
         let themes = crate::theme::builtin();
         self.heading_styles.retain(|id, style| {
+            style.shadow_intensity = style.shadow_intensity.min(100);
             if !(style.color.len() == 7
                 && style.color.starts_with('#')
                 && style.color.as_bytes()[1..]
@@ -396,7 +407,8 @@ impl Settings {
                 style.color.clear();
             }
             style.color.make_ascii_lowercase();
-            themes.iter().any(|theme| theme.id == *id) && (!style.color.is_empty() || style.shadow)
+            themes.iter().any(|theme| theme.id == *id)
+                && (!style.color.is_empty() || style.shadow || style.shadow_intensity != 50)
         });
         self.highlight_limit_kb = self.highlight_limit_kb.clamp(1, 4096);
         self.plain_text_above_mb = self.plain_text_above_mb.clamp(1, 32);
