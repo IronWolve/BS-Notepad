@@ -728,3 +728,17 @@ $('disk-keep').onclick=()=>send({cmd:'keepDisk'});
 
 app.favoriteLabel=()=>{const id=state.previewTheme||state.settings.theme;const saved=(state.settings.theme_favorites||[]).includes(id);$('theme-favorite').textContent=(saved?'★ Unfavorite ':'☆ Favorite ')+(state.themes.find(t=>t.id===id)?.name||'theme');};
 $('theme-favorite').onclick=()=>{const id=state.previewTheme||state.settings.theme,favorites=state.settings.theme_favorites||[];send({cmd:'setting',key:'theme_favorites',value:favorites.includes(id)?favorites.filter(t=>t!==id):[...favorites,id]});};
+
+app.setFonts=fonts=>{state.fonts=fonts;if($("options").classList.contains("show"))app.drawOptions();};
+
+// Reloading the browser surface must not discard its native document bridge.
+window.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='r'){event.preventDefault();event.stopImmediatePropagation();send({cmd:'reload'});}},true);
+
+app.tabDirty=payload=>{
+ const tab=state.tabs?.find(tab=>tab.id===payload.tab);if(tab)tab.dirty=payload.dirty;
+ if(payload.tab===state.activeTab)app.setDirty(payload.dirty);
+ const marker=$('document-tabs').querySelector(`[data-id="${payload.tab}"] .tab-dirty`);if(marker)marker.hidden=!payload.dirty;
+ app.documentChrome();
+};
+
+app.recoveryStatus=error=>{const note=$('recovery-warning');note.hidden=!error;note.textContent=error?'Draft recovery is unavailable. Save your changes regularly. '+error:'';};

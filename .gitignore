@@ -21,6 +21,7 @@
 !/src/assets.rs
 !/src/editing.js
 !/src/dialogs.rs
+!/src/disk.rs
 !/src/documents.rs
 !/src/find.js
 !/src/fonts.rs
@@ -33,6 +34,8 @@
 !/src/mac_menu.rs
 !/src/main.rs
 !/src/maintenance.rs
+!/src/paths.rs
+!/src/preferences.rs
 !/src/recovery.rs
 !/src/render.rs
 !/src/root.rs

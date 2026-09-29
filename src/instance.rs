@@ -5,7 +5,7 @@ use std::{
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 const MAX_MESSAGE: usize = 64 * 1024;
 #[derive(Serialize, Deserialize)]
@@ -34,22 +34,44 @@ pub fn acquire(root: &Path) -> std::io::Result<Guard> {
         .create(true)
         .truncate(false)
         .open(root.join("instance.lock"))?;
-    file.try_lock()
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    file.try_lock().map_err(|error| match error {
+        std::fs::TryLockError::WouldBlock => std::io::Error::from(std::io::ErrorKind::WouldBlock),
+        std::fs::TryLockError::Error(error) => error,
+    })?;
     Ok(Guard {
         _file: file,
         root: root.into(),
     })
 }
-fn frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+fn frame(stream: &mut TcpStream, budget: Duration) -> std::io::Result<Vec<u8>> {
+    let deadline = Instant::now() + budget;
+    fn read_until(
+        stream: &mut TcpStream,
+        mut buffer: &mut [u8],
+        deadline: Instant,
+    ) -> std::io::Result<()> {
+        while !buffer.is_empty() {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::TimedOut))?;
+            stream.set_read_timeout(Some(remaining))?;
+            match stream.read(buffer) {
+                Ok(0) => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)),
+                Ok(count) => buffer = &mut buffer[count..],
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
     let mut size = [0; 4];
-    stream.read_exact(&mut size)?;
+    read_until(stream, &mut size, deadline)?;
     let len = u32::from_be_bytes(size) as usize;
     if len > MAX_MESSAGE {
         return Err(std::io::Error::other("Request too large"));
     }
     let mut bytes = vec![0; len];
-    stream.read_exact(&mut bytes)?;
+    read_until(stream, &mut bytes, deadline)?;
     Ok(bytes)
 }
 fn write_frame(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> {
@@ -73,11 +95,15 @@ pub fn hand_off(root: &Path, paths: &[PathBuf]) -> bool {
                 token: endpoint.token,
                 paths: paths
                     .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect(),
+                    .map(|p| {
+                        p.to_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| std::io::Error::other("Unsupported filename encoding"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
             })?,
         )?;
-        if frame(&mut stream)? != b"accepted" {
+        if frame(&mut stream, Duration::from_millis(900))? != b"accepted" {
             return Err(std::io::Error::other("Invalid acknowledgment"));
         }
         Ok(())
@@ -108,12 +134,24 @@ where
     )?;
     std::thread::spawn(move || {
         for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
+            let mut stream = match stream {
+                Ok(stream) => stream,
+                Err(_) => {
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+            };
             let _ = stream.set_read_timeout(Some(Duration::from_millis(300)));
             let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
-            if let Ok(bytes) = frame(&mut stream) {
+            if let Ok(bytes) = frame(&mut stream, Duration::from_millis(300)) {
                 if let Ok(message) = serde_json::from_slice::<Message>(&bytes) {
-                    if message.token == token && message.paths.len() <= 128 {
+                    if message.token == token
+                        && message.paths.len() <= 128
+                        && message
+                            .paths
+                            .iter()
+                            .all(|p| !p.contains('\0') && p.len() <= 32768)
+                    {
                         on_request(message.paths);
                         let _ = write_frame(&mut stream, b"accepted");
                     }

@@ -57,7 +57,7 @@ mod platform {
                 "DIALOG_GTK initialized={} main={} authorized={}",
                 gtk::is_initialized(),
                 gtk::is_initialized_main_thread(),
-                crate::root::smoke_authorized(&crate::root::app_root())
+                crate::root::app_root().is_ok_and(|root| crate::root::smoke_authorized(&root))
             );
             if !gtk::is_initialized_main_thread() {
                 return MessageDialogResult::Cancel;
@@ -90,7 +90,7 @@ mod platform {
                 gtk::ResponseType::No
             });
             #[cfg(feature = "smoke")]
-            if crate::root::smoke_authorized(&crate::root::app_root()) {
+            if crate::root::app_root().is_ok_and(|root| crate::root::smoke_authorized(&root)) {
                 let response = std::env::var("SMOKE_DIALOG_RESPONSE").unwrap_or_default();
                 if !response.is_empty() {
                     let copy = dialog.clone();
@@ -220,3 +220,28 @@ mod platform {
 }
 #[cfg(target_os = "linux")]
 pub use platform::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult};
+
+pub fn startup_error(message: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if gtk::init().is_ok() {
+            let dialog = gtk::MessageDialog::builder()
+                .text(crate::root::app_name())
+                .secondary_text(message)
+                .message_type(gtk::MessageType::Error)
+                .buttons(gtk::ButtonsType::Close)
+                .build();
+            dialog.run();
+            dialog.close();
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        MessageDialog::new()
+            .set_title(crate::root::app_name())
+            .set_description(message)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
+}

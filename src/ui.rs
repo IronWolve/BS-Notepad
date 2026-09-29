@@ -366,6 +366,7 @@ article th,article td { overflow-wrap:normal; }
 #document-status { display:flex; gap:16px; justify-content:space-between; font-size:11px; padding:3px 12px; color:var(--dim); }
 #cursor-status { border:0; padding:0; background:transparent; color:inherit; }
 #note { position:fixed; z-index:45; left:50%; bottom:16px; transform:translateX(-50%); max-width:min(640px,calc(100vw - 40px)); padding:9px 14px; border:1px solid var(--rule); border-radius:7px; background:var(--panel); color:var(--fg); box-shadow:0 3px 12px #0003; font-size:12px; white-space:normal; overflow-wrap:anywhere; pointer-events:none; }
+#recovery-warning { padding:5px 16px; color:var(--fg); background:var(--panel); font-size:12px; }
 #document-note { margin:10px 20px 0; color:var(--dim); font-size:12px; }
 #quick-dialog,#file-dialog { color:var(--fg); background:var(--bg); border:1px solid var(--rule); border-radius:10px; padding:16px; box-shadow:0 12px 36px #0004; }
 #quick-dialog { width:min(560px,calc(100vw - 48px)); }
@@ -621,6 +622,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
   <div id="document-status"><button id="cursor-status" title="Go to line (Ctrl+G)">Read mode</button><span id="format-status"></span></div>
   </div>
 </div>
+<div id="recovery-warning" role="status" hidden></div>
 <span id="note" role="status" aria-live="polite" hidden></span>
 <dialog id="quick-dialog" aria-labelledby="quick-heading"><div class="dialog-heading"><h2 id="quick-heading">Quick Open</h2><button id="quick-close" aria-label="Close Quick Open">×</button></div><input id="quick-input" type="search" maxlength="256" autocomplete="off" placeholder="Find a file by name or path…" role="combobox" aria-expanded="true" aria-controls="quick-list" aria-autocomplete="list" aria-label="Find a workspace file"><div id="quick-list" role="listbox" aria-label="Matching files"></div><p id="quick-status" role="status"></p></dialog>
 <dialog id="file-dialog" aria-labelledby="file-title"><form id="file-form"><h2 id="file-title">Rename</h2><label id="file-name-label" for="file-name">Name</label><input id="file-name" required maxlength="255" autocomplete="off" aria-describedby="file-error"><p id="file-error" role="alert"></p><div class="dialog-actions"><button type="button" id="file-cancel">Cancel</button><button type="submit" id="file-submit">Rename</button></div></form></dialog>
@@ -1084,7 +1086,7 @@ const app = {
   wireLinks() {
     for (const a of document.querySelectorAll("#article a")) {
       if (a.dataset.external) a.onclick = e => { e.preventDefault(); send({ cmd:"external", url:a.getAttribute("href") }); };
-      else if (a.dataset.open) a.onclick = e => { e.preventDefault(); send({ cmd:"openPath", path:a.dataset.open, fragment:a.dataset.fragment || "" }); };
+      else if (a.dataset.open) a.onclick = e => { e.preventDefault(); send({ cmd:"openPath", path:a.dataset.open, link:true, fragment:a.dataset.fragment || "" }); };
       else if(a.getAttribute("href")?.startsWith("#"))a.onclick=e=>{e.preventDefault();app.goToAnchor(a.getAttribute("href").slice(1));};
     }
   },

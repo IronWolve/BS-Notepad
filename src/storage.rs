@@ -353,17 +353,16 @@ fn write_report(
         } else {
             crate::workspace_files::rename_no_replace(&temp, path)?;
         }
-        let mut report = WriteReport { warning: None };
         #[cfg(unix)]
-        if let Err(error) = sync_parent(parent) {
-            report.warning = Some(format!(
-                "Saved, but directory durability could not be confirmed: {}",
-                error
-            ));
-        }
+        let warning = sync_parent(parent).err().map(|error| {
+            format!("Saved, but directory durability could not be confirmed: {error}")
+        });
         #[cfg(not(unix))]
-        let _ = sync_parent;
-        Ok(report)
+        let warning = {
+            let _ = sync_parent;
+            None
+        };
+        Ok(WriteReport { warning })
     })();
     if result.is_err() && created {
         let _ = std::fs::remove_file(&temp);
@@ -381,26 +380,57 @@ pub fn write_with_failed_directory_sync(path: &Path, bytes: &[u8]) -> io::Result
     })
 }
 
-pub fn apply_patch(text: &mut String, start: usize, end: usize, insert: &str) -> bool {
-    fn byte_at(text: &str, index: usize) -> Option<usize> {
-        let mut units = 0;
-        for (offset, c) in text.char_indices() {
-            if units == index {
-                return Some(offset);
-            }
-            units += c.len_utf16();
-            if units > index {
-                return None;
-            }
+/// Sparse UTF-16 checkpoints keep nearby typing from rescanning a large document.
+#[derive(Clone, Default)]
+pub struct PatchIndex(Vec<(usize, usize)>);
+impl PatchIndex {
+    pub fn apply(&mut self, text: &mut String, start: usize, end: usize, insert: &str) -> bool {
+        if start > end {
+            return false;
         }
-        (units == index).then_some(text.len())
+        let checkpoint = self.0.partition_point(|(units, _)| *units <= start);
+        let (mut units, byte) = checkpoint
+            .checked_sub(1)
+            .map(|i| self.0[i])
+            .unwrap_or((0, 0));
+        let Some(tail) = text.get(byte..) else {
+            self.0.clear();
+            return false;
+        };
+        let mut first = None;
+        let mut last = None;
+        let mut last_checkpoint = self.0.last().map_or(0, |(units, _)| *units);
+        for (relative, ch) in tail
+            .char_indices()
+            .chain(std::iter::once((tail.len(), '\0')))
+        {
+            let offset = byte + relative;
+            if units >= last_checkpoint.saturating_add(1024) {
+                self.0.push((units, offset));
+                last_checkpoint = units;
+            }
+            if units == start {
+                first = Some(offset);
+            }
+            if units == end {
+                last = Some(offset);
+                break;
+            }
+            if units > end || (units > start && first.is_none()) {
+                return false;
+            }
+            units += ch.len_utf16();
+        }
+        let (Some(first), Some(last)) = (first, last) else {
+            return false;
+        };
+        self.0
+            .truncate(self.0.partition_point(|(units, _)| *units <= start));
+        text.replace_range(first..last, insert);
+        true
     }
-    if start > end {
-        return false;
-    }
-    let (Some(a), Some(b)) = (byte_at(text, start), byte_at(text, end)) else {
-        return false;
-    };
-    text.replace_range(a..b, insert);
-    true
+}
+#[cfg(test)]
+pub fn apply_patch(text: &mut String, start: usize, end: usize, insert: &str) -> bool {
+    PatchIndex::default().apply(text, start, end, insert)
 }

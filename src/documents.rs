@@ -3,6 +3,10 @@ use std::time::SystemTime;
 
 #[derive(Clone)]
 pub struct Document {
+    pub pending_fragment: String,
+    pub unloaded: bool,
+    pub loading: bool,
+    pub load_error: Option<String>,
     pub image: Option<crate::storage::ImageInfo>,
     pub image_view: Option<crate::settings::ImageView>,
     pub recovery_key: String,
@@ -10,9 +14,11 @@ pub struct Document {
     pub fingerprint: Option<u64>,
     pub read_only: bool,
     pub external_changed: bool,
+    pub disk: crate::disk::State,
     pub id: u64,
     pub path: Option<PathBuf>,
     pub source: String,
+    pub patch_index: crate::storage::PatchIndex,
     pub saved_source: String,
     pub seen_mtime: Option<SystemTime>,
     pub dirty: bool,
@@ -31,6 +37,10 @@ impl Document {
             .map(|_| crate::storage::fingerprint(source.as_bytes()));
         let source = crate::storage::normalize(&source);
         Self {
+            pending_fragment: String::new(),
+            unloaded: false,
+            loading: false,
+            load_error: None,
             image: None,
             image_view: None,
             recovery_key: crate::recovery::key(),
@@ -38,13 +48,13 @@ impl Document {
             fingerprint,
             read_only: false,
             external_changed: false,
+            disk: Default::default(),
             id: 0,
-            seen_mtime: path
-                .as_ref()
-                .and_then(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()),
+            seen_mtime: None,
             path,
             saved_source: source.clone(),
             source,
+            patch_index: Default::default(),
             dirty: false,
             edit_revision: 0,
             editing: false,
@@ -70,6 +80,33 @@ impl Document {
         doc.read_only = loaded.read_only;
         doc
     }
+    pub fn deferred(view: &crate::settings::SessionTab) -> Self {
+        let mut doc = Self::new(None, String::new());
+        doc.path = Some(crate::paths::display_form(Path::new(&view.path)));
+        doc.unloaded = true;
+        doc.read_only = true;
+        doc.apply_view(view);
+        doc
+    }
+    pub fn apply_view(&mut self, view: &crate::settings::SessionTab) {
+        self.scroll = view.scroll;
+        self.editing = view.editing;
+        self.editor_scroll = view.editor_scroll;
+        self.selection_start = view.selection_start;
+        self.selection_end = view.selection_end;
+        self.image_view = view.image_view.clone();
+    }
+    pub fn view(&self) -> Option<crate::settings::SessionTab> {
+        Some(crate::settings::SessionTab {
+            path: self.path.as_ref()?.to_str()?.to_owned(),
+            scroll: self.scroll,
+            editing: self.editing,
+            editor_scroll: self.editor_scroll,
+            selection_start: self.selection_start,
+            selection_end: self.selection_end,
+            image_view: self.image_view.clone(),
+        })
+    }
     pub fn name(&self) -> String {
         self.path
             .as_ref()
@@ -83,6 +120,7 @@ impl Document {
 
     pub fn edit(&mut self, source: String) {
         self.source = source;
+        self.patch_index = Default::default();
         self.dirty = self.source != self.saved_source;
     }
 }
@@ -113,7 +151,11 @@ impl Documents {
     pub fn find_path(&self, path: &Path) -> Option<u64> {
         self.tabs
             .iter()
-            .find(|d| d.path.as_deref() == Some(path))
+            .find(|d| {
+                d.path
+                    .as_deref()
+                    .is_some_and(|p| crate::paths::same(p, path))
+            })
             .map(|d| d.id)
     }
     pub fn activate(&mut self, id: u64) -> bool {

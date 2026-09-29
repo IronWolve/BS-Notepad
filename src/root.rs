@@ -5,12 +5,16 @@ use std::path::PathBuf;
 /// Derived from the executable's own location, never from the working
 /// directory and never from a constant, so the tree can be renamed or moved
 /// without breaking.
-pub fn app_root() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.canonicalize().ok())
-        .map(|exe| data_root(&exe))
-        .unwrap_or_else(|| PathBuf::from("."))
+pub fn app_root() -> std::io::Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    // current_exe is already absolute; a failed canonicalization must never select cwd.
+    let exe = exe.canonicalize().unwrap_or(exe);
+    if !exe.is_absolute() {
+        return Err(std::io::Error::other(
+            "Could not locate the application folder.",
+        ));
+    }
+    Ok(data_root(&exe))
 }
 
 /// Bundles keep mutable state beside the app so running it never modifies its code signature.
