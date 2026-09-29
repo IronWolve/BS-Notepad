@@ -237,7 +237,7 @@ function fileMenu(event,row) {
     null,{label:'Refresh file list',icon:'reload',action:()=>send({cmd:'refreshTree'})});
   showMenu(row,entries,event);
 }
-for(const pane of [$('pane-files'),$('pane-recent')]) {
+for(const pane of [$('pane-files')]) {
   pane.oncontextmenu=e=>{const row=e.target.closest('[data-path]');if(row)fileMenu(e,row);};
   pane.addEventListener('keydown',e=>{if(e.key==='F10'&&e.shiftKey){const row=e.target.closest('[data-path]');if(row)fileMenu(e,row);}});
   pane.onauxclick=e=>{const row=e.target.closest('[data-path]');if(e.button===1&&row&&!row.classList.contains('dir')){e.preventDefault();send({cmd:'openPath',path:row.dataset.path,newTab:true});}};
@@ -325,8 +325,8 @@ app.chooseTheme=()=>openChoices($('b-theme'),state.themes.map(t=>({value:t.id,la
 
 const HELP = [
  {id:'start',title:'Getting started',paragraphs:[
-  'Choose a folder in Explorer to browse your workspace. Select a file to read it; use Edit when you want to change its text.',
-  'Files and the theme arrow sit beside the main menu. Find, Source, Edit and the document-map toggle sit on the right. The quiet controls brighten on hover or keyboard focus. Files shows or hides Explorer. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
+  'Choose a folder in Files to browse your workspace. Select a file to read it; use Edit when you want to change its text.',
+  'Files and the theme arrow sit beside the main menu. Find, Outline, Source, Edit and the document-map toggle sit on the right. The quiet controls brighten on hover or keyboard focus. Files shows or hides the file browser. Outline shows document headings in the sidebar. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
  ]},
  {id:'tabs',title:'Files & tabs',paragraphs:[
   'Right-click a file and choose Open in new tab, or middle-click it. An already-open file switches to its existing tab. New notes and files chosen from the Open dialog also get their own tabs.',
@@ -345,7 +345,7 @@ const HELP = [
   'The main menu can clear recent files or clean old app logs and marked release backups. Retention limits are in Options → Workspace. Unmarked folders and unrelated files are preserved. Options → Document also controls remote images.'
  ]},
  {id:'images',title:'Images',paragraphs:[
-  'Click a picture inside a Markdown document to inspect it with the same zoom and magnifier controls. Back to document or Escape returns to your reading position. Ctrl+click a linked picture to follow its link. Open a picture from Explorer, Open File or drag and drop. PNG, JPEG, GIF, WebP, BMP, ICO, SVG and AVIF files open inside the document area as view-only tabs. Files are limited to 32 MB; formats supported by the system browser are displayed.',
+  'Click a picture inside a Markdown document to inspect it with the same zoom and magnifier controls. Back to document or Escape returns to your reading position. Ctrl+click a linked picture to follow its link. Open a picture from Files, Open File or drag and drop. PNG, JPEG, GIF, WebP, BMP, ICO, SVG and AVIF files open inside the document area as view-only tabs. Files are limited to 32 MB; formats supported by the system browser are displayed.',
   'The image starts fitted to the window. Use the plus and minus buttons or Ctrl+wheel to zoom. The fit button shows the whole image; 1:1 or Ctrl+0 shows actual pixels. Drag a zoomed image to pan, or use the canvas scrollbars.',
   'Enable the magnifying-glass button, then move over the picture to inspect details. Move away to hide the lens. With the canvas focused, F fits the picture and M toggles the magnifier. Image zoom is separate from your text zoom setting.'
  ]},

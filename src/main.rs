@@ -538,7 +538,7 @@ impl App {
         self.render_current(self.scroll);
         self.send_recents();
         self.persist_settings();
-        if !task.path.starts_with(&self.tree_dir) {
+        if !task.reload && !task.path.starts_with(&self.tree_dir) {
             if let Some(parent) = task.path.parent() {
                 self.send_tree(parent.into());
             }

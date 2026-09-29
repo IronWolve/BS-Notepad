@@ -13,7 +13,7 @@ Read a document, switch to its source, and edit it in the same window. BS Notepa
 ## What it does
 
 - **Read and write.** Rendered Markdown, syntax-colored source, an editor, and a reading column that adapts to wide tables and code.
-- **Keep a workspace.** A file tree with file-type icons, folder expansion, filtering, an outline, and recent files. Right-click or middle-click a file to open it in a tab.
+- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. A toolbar Outline button shows document headings. Right-click or middle-click a file to open it in a tab.
 - **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast and choose separate interface, reading, and code fonts.
 - **Find your place.** Toggle Find, match case or whole words, replace text, jump to a line, and navigate with the optional document map.
 - **Look closer.** Images open inside the workspace with fit, actual size, zoom, pan, and a magnifying lens. Click a picture in Markdown to inspect it, then return to your reading position.
@@ -33,7 +33,7 @@ Screenshots show the app's actual interface in a browser test fixture with sampl
 
 Open a file with **Ctrl+O**, or choose a folder with **Ctrl+Shift+O**. Dragging a file into the window also opens it. Use **Ctrl+E** to switch between editing and reading; **Ctrl+S** saves.
 
-The main menu is at the upper left. Files and the theme picker sit beside it. Find, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
+The main menu is at the upper left. Files and the theme picker sit beside it. Find, Outline, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
 
 [Download the latest release](https://github.com/IronWolve/bs-notepad/releases/latest) for Windows, macOS, or Linux. ZIP packages include checksums, the project copyright notice, and third-party notices. Compiled applications are distributed separately from this source repository.
 

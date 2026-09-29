@@ -92,6 +92,7 @@ fn settings_persist_autohide_and_clamp_invalid_sizes() {
         chrome: "auto".into(),
         sidebar: "off".into(),
         sidebar_width: 0,
+        sidebar_tab: "recent".into(),
         tab_size: 100,
         zoom: -1.,
         ..Default::default()
@@ -101,6 +102,7 @@ fn settings_persist_autohide_and_clamp_invalid_sizes() {
     assert_eq!(s.chrome, "auto");
     assert_eq!(s.sidebar, "off");
     assert_eq!(s.sidebar_width, 180);
+    assert_eq!(s.sidebar_tab, "files");
     assert_eq!(s.tab_size, 8);
     assert_eq!(s.zoom, 0.5);
     s.save(&f.0).unwrap();

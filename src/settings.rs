@@ -183,7 +183,7 @@ impl Settings {
         if !["always", "auto", "off"].contains(&self.sidebar.as_str()) {
             self.sidebar = "always".into();
         }
-        if !["files", "outline", "recent"].contains(&self.sidebar_tab.as_str()) {
+        if !["files", "outline"].contains(&self.sidebar_tab.as_str()) {
             self.sidebar_tab = "files".into();
         }
         if !["source", "rendered"].contains(&self.view_mode.as_str()) {

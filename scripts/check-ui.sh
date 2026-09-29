@@ -15,3 +15,6 @@ agent-browser open "file://$ROOT/tmp/browser-regressions/fixture.html"
 agent-browser eval --stdin < "$ROOT/repo/tests/image-regressions.js"
 agent-browser open "file://$ROOT/tmp/browser-regressions/fixture.html"
 agent-browser eval --stdin < "$ROOT/repo/tests/markdown-image-regressions.js"
+
+agent-browser open "file://$ROOT/tmp/browser-regressions/fixture.html"
+agent-browser eval --stdin < "$ROOT/repo/tests/sidebar-regressions.js"
