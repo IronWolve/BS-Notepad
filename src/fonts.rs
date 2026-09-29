@@ -21,8 +21,11 @@ pub fn families() -> Vec<FontFamily> {
             continue;
         };
         let lower = name.to_lowercase();
-        let nerd =
-            lower.contains("nerd font") || lower.ends_with(" nf") || lower.contains("nerdfont");
+        let nerd = lower.contains("nerd font")
+            || [" nf", " nfm", " nfp"]
+                .iter()
+                .any(|suffix| lower.ends_with(suffix))
+            || lower.contains("nerdfont");
         let entry = seen.entry(name.clone()).or_insert((face.monospaced, nerd));
         entry.0 |= face.monospaced;
         entry.1 |= nerd;
@@ -46,7 +49,7 @@ pub fn has_family(list: &[FontFamily], wanted: &str) -> bool {
         .next()
         .unwrap_or("")
         .trim()
-        .trim_matches('"');
+        .trim_matches(['"', '\'']);
     if first.is_empty() {
         return true;
     }
@@ -58,6 +61,13 @@ pub fn has_family(list: &[FontFamily], wanted: &str) -> bool {
         "serif",
         "monospace",
         "cursive",
+        "ui-sans-serif",
+        "ui-serif",
+        "ui-rounded",
+        "fantasy",
+        "math",
+        "emoji",
+        "fangsong",
     ];
     if generic.contains(&first.to_lowercase().as_str()) {
         return true;

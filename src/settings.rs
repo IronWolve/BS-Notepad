@@ -14,7 +14,7 @@ pub struct ImageView {
 impl ImageView {
     pub fn normalize(&mut self) {
         self.scale = if self.scale.is_finite() {
-            self.scale.clamp(0.01, 8.0)
+            self.scale.clamp(0.001, 8.0)
         } else {
             1.0
         };
@@ -104,6 +104,7 @@ pub struct Settings {
     /// "auto" slides the pane in when the mouse reaches the left edge,
     /// "always" keeps it docked, "off" never shows it.
     pub sidebar: String,
+    pub sidebar_return: String,
     pub sidebar_width: u32,
     pub sidebar_tab: String,
     pub window_width: u32,
@@ -169,6 +170,7 @@ impl Default for Settings {
             chrome: "always".into(),
             // Start with discoverable controls; edge reveal remains optional.
             sidebar: "always".into(),
+            sidebar_return: "always".into(),
             sidebar_width: 260,
             sidebar_tab: "files".into(),
             window_width: 1200,
@@ -296,6 +298,9 @@ impl Settings {
     }
 
     pub fn normalize(&mut self) {
+        if !["auto", "always"].contains(&self.sidebar_return.as_str()) {
+            self.sidebar_return = "always".into();
+        }
         if !self.line_height.is_finite() {
             self.line_height = 1.65;
         }

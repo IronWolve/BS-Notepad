@@ -13,6 +13,8 @@ pub const SHELL: &str = r##"<!doctype html><html lang="en"><head><meta name="vie
 html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); }
 body { display:flex; flex-direction:column; font:var(--ui-size)/1.45 var(--ui-font); }
 button,input,select { font:inherit; }
+input:not([type=range]):not([type=checkbox]):not([type=color]),select { border-color:var(--input-rule,var(--rule))!important; }
+#help-content a { text-decoration:underline; text-underline-offset:3px; }
 button { color:inherit; cursor:pointer; }
 button:disabled { opacity:.4; cursor:default; }
 button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
@@ -107,12 +109,14 @@ body.autoside #side.show,body.autoside #side:focus-within { transform:none; }
 #doc { flex:1; overflow:auto; }
 article { width:var(--reader-width,100%); margin-left:var(--reader-offset,0px); padding:24px 32px; font:calc(var(--body-size) * var(--zoom))/var(--line) var(--body-font); }
 article a { color:var(--link); }
-article pre { overflow-x:auto; padding:14px 16px; border-radius:5px; position:relative; }
+article pre { border:1px solid var(--rule); overflow-x:auto; padding:14px 16px; border-radius:5px; position:relative; }
 article code,article pre { font-family:var(--code-font); font-size:calc(var(--code-size) * var(--zoom)); }
 article pre.plain { background:var(--panel); }
 article table { border-collapse:collapse; }
 article td,article th { border:1px solid color-mix(in srgb,var(--rule) 60%,var(--bg)); padding:5px 10px; }
 article img { max-width:100%; }
+article .embedded-image-zoom { margin-inline-start:4px; border:1px solid var(--rule); border-radius:4px; color:var(--dim); background:var(--panel); opacity:.6; }
+article .embedded-image-zoom:hover,article .embedded-image-zoom:focus-visible { opacity:1; }
 article h1,article h2,article h3 { line-height:1.3; }
 article .callout-label,article dt { font-weight:650; }
 article dd { margin:0 0 .8em 1.5em; }
@@ -124,14 +128,14 @@ article :is(h1,h2) { text-shadow:var(--heading-shadow,none); }
 .heading-control input[type=color] { width:30px; height:28px; padding:2px; border:1px solid var(--rule); border-radius:4px; background:var(--panel); }
 .heading-control label { display:flex; align-items:center; gap:5px; color:var(--dim); font-size:12px; white-space:nowrap; }
 .heading-sample { flex-basis:100%; font-size:17px; font-weight:650; color:var(--heading-color,var(--fg)); text-shadow:var(--heading-shadow,none); }
-article mark { background:var(--accent); color:var(--bg); }
+article mark { background:var(--accent); color:var(--mark-fg,var(--fg)); }
 article mark.on { outline:2px solid var(--fg); }
 .copy { position:absolute; top:6px; right:6px; opacity:0; background:var(--panel); color:var(--fg); border:1px solid var(--rule); border-radius:4px; padding:2px 8px; font:var(--ui-size) var(--ui-font); }
 article pre:hover .copy,.copy:focus-visible { opacity:1; }
 #editor { flex:1; min-height:0; display:none; }
 #editor.show { display:block; }
 #text { width:100%; height:100%; resize:none; border:0; outline:0; background:var(--bg); color:var(--fg); padding:20px 28px; font-family:var(--code-font); font-size:calc(var(--code-size) * var(--zoom)); line-height:var(--line); tab-size:4; }
-#fm { display:none; padding:8px 32px; max-height:20vh; overflow:auto; color:var(--dim); background:var(--panel); border-bottom:1px solid var(--rule); font-family:var(--code-font); font-size:var(--ui-size); white-space:pre-wrap; }
+#fm { border:1px solid var(--rule); display:none; padding:8px 32px; max-height:20vh; overflow:auto; color:var(--dim); background:var(--panel); border-bottom:1px solid var(--rule); font-family:var(--code-font); font-size:var(--ui-size); white-space:pre-wrap; }
 #fm.show { display:block; }
 #options { display:none; position:absolute; inset:0; background:#0007; z-index:30; }
 #options.show { display:flex; align-items:center; justify-content:center; }
@@ -527,9 +531,14 @@ body.resizing-sidebar #side { transition:none; }
 #document-tabs.tab-drop-end { box-shadow:inset -2px 0 var(--accent); }
 body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-select:none!important; }
 
+
+/* Edge targets leave the outer resize strip available. */
+#hot { display:none; top:4px; height:10px; } body.auto #hot { display:block; }
+#sidehot { left:4px; width:10px; } #peek { transform:translateX(-50%); }
+@media (forced-colors:active) { button,input,select { forced-color-adjust:auto; } :focus-visible { outline:2px solid Highlight!important; } .document-tab.active { border-bottom:2px solid Highlight; } article mark { background:Highlight;color:HighlightText; } }
 </style></head><body>
 
-<div id="hot"></div>
+<div id="hot" aria-hidden="true"></div>
 <header id="bar" aria-label="Toolbar">
   <div id="left-tools">
     <button id="b-menu" class="icon-only" aria-label="Main menu" aria-haspopup="menu" title="Main menu (Alt+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
@@ -602,7 +611,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
     <div id="disk-change" hidden>Changed on disk <button id="disk-reload">Reload</button><button id="disk-keep">Keep edits</button></div>
     <div id="content-row" role="tabpanel"><div id="content-main">
     <div id="fm"></div>
-    <div id="doc"><div id="document-note" role="status" hidden></div><article id="article"></article></div>
+    <div id="doc" tabindex="-1" dir="auto"><div id="document-note" role="status" hidden></div><article id="article"></article></div>
     <section id="image-viewer" aria-label="Image viewer" hidden>
       <div id="image-tools" role="toolbar" aria-label="Image controls">
         <button id="image-back" hidden aria-label="Back to document" title="Back to document (Esc)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back to document</span></button>
@@ -617,7 +626,7 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
       <div id="image-viewport" tabindex="0" aria-label="Image canvas. Drag to pan when zoomed. F fits the image; M toggles the magnifier."><div id="image-board"></div><p id="image-message" role="status"></p></div>
       <div id="image-lens" aria-hidden="true" hidden></div>
     </section>
-    <div id="editor"><textarea id="text" aria-label="Document editor" spellcheck="false"></textarea></div>
+    <div id="editor"><textarea dir="auto" id="text" aria-label="Document editor" spellcheck="false"></textarea></div>
     </div><aside id="minimap" aria-label="Document map"><canvas id="map-canvas" aria-hidden="true"></canvas><div id="map-viewport" role="scrollbar" tabindex="0" aria-label="Document map position" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-controls="doc"></div></aside></div>
   <div id="document-status"><button id="cursor-status" title="Go to line (Ctrl+G)">Read mode</button><span id="format-status"></span></div>
   </div>
@@ -651,12 +660,14 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
 <script nonce="__SCRIPT_NONCE__">
 window.startupErrors=[];
 window.postNative=payload=>{const text=JSON.stringify(payload);if(window.chrome?.webview?.postMessage)window.chrome.webview.postMessage(text);else if(window.ipc?.postMessage)window.ipc.postMessage(text);else throw Error('Native message bridge unavailable');};
-window.addEventListener('error',event=>{const message=String(event.message||'Script error')+' at '+event.lineno+':'+event.colno;if(window.startupErrors.length<20)window.startupErrors.push(message);try{window.postNative({cmd:'startupError',error:message});}catch{};});
-window.addEventListener('securitypolicyviolation',event=>{const message='Page policy blocked '+event.violatedDirective;if(window.startupErrors.length<20)window.startupErrors.push(message);try{window.postNative({cmd:'startupError',error:message});}catch{};});
+window.addEventListener('error',event=>{const message=String(event.message||'Script error')+' at '+event.lineno+':'+event.colno;if(window.startupErrors.length>=20||window.startupErrors.includes(message))return;window.startupErrors.push(message);try{window.postNative({cmd:'startupError',error:message});}catch{};});
+window.addEventListener('securitypolicyviolation',event=>{const message='Page policy blocked '+event.violatedDirective;if(window.startupErrors.length>=20||window.startupErrors.includes(message))return;window.startupErrors.push(message);try{window.postNative({cmd:'startupError',error:message});}catch{};});
 </script>
 <script nonce="__SCRIPT_NONCE__">
 const shellNodes = new Map([...document.querySelectorAll('[id]')].map(node=>[node.id,node]));
 const $ = id => id === 'text' ? shellNodes.get('editor').querySelector('textarea:not([hidden])') : shellNodes.get(id) || document.getElementById(id);
+const primaryModifier=e=>state.platform==='macos'?e.metaKey:e.ctrlKey;
+const commandKey=e=>/^[a-z]$/i.test(e.key)?e.key.toLowerCase():/^Key[A-Z]$/.test(e.code)?e.code.slice(3).toLowerCase():e.key.toLowerCase();
 function scalarText(value) {
  if(typeof value.toWellFormed==='function')return value.toWellFormed();
  let out='';for(const char of value){const unit=char.charCodeAt(0);out+=char.length===1&&unit>=0xd800&&unit<=0xdfff?'\ufffd':char;}return out;
@@ -845,14 +856,16 @@ const app = {
     app.windowState(!!s.maximized);
     if (s.missingFonts && s.missingFonts.length)
       app.note("font not on this machine: " + s.missingFonts.join(", "));
-    if ($("options").classList.contains("show")) app.drawOptions();
+    if ($("options").classList.contains("show") && !document.activeElement?.matches("#sets input")) app.drawOptions();
   },
   applyTheme(t) {
     const r = document.documentElement.style;
     document.body.classList.toggle("light-icons", !t.dark);
     r.setProperty("color-scheme",t.dark ? "dark" : "light");
     r.setProperty("--bg", t.bg); r.setProperty("--fg", t.fg);
-    r.setProperty("--panel", t.panel); r.setProperty("--bar", t.bar);
+    r.setProperty("--panel", t.panel);
+    r.setProperty("--mark-fg", t.mark_fg || t.fg); r.setProperty("--input-rule", t.input_rule || t.rule);
+    r.setProperty("--selected", t.selected || "color-mix(in srgb,var(--accent) 18%,var(--panel))");
     r.setProperty("--rule", t.rule); r.setProperty("--link", t.link);
     r.setProperty("--dim", t.dim); r.setProperty("--accent", t.accent);
     state.appliedTheme=t;app.applyHeadingStyle?.();
@@ -863,8 +876,8 @@ const app = {
     app.applyHeadingStyle?.();
     const filesWereVisible = $("pane-files").clientHeight > 0;
     const r = document.documentElement.style;
-    r.setProperty("--ui-font", s.ui_font); r.setProperty("--body-font", s.body_font);
-    r.setProperty("--code-font", s.code_font);
+    r.setProperty("--ui-font", app.fontStack(s.ui_font,"sans-serif")); r.setProperty("--body-font", app.fontStack(s.body_font,"sans-serif"));
+    r.setProperty("--code-font", app.fontStack(s.code_font,"monospace"));
     r.setProperty("--ui-size", s.ui_size + "px");
     r.setProperty("--files-size", (s.files_size || 16) + "px");
     r.setProperty("--body-size", s.body_size + "px");
@@ -910,7 +923,7 @@ const app = {
       $("pane-" + p).classList.toggle("on", p === s.sidebar_tab);
     for (const id of ["folder-tools","file-tools"]) $(id).style.display = s.sidebar_tab === "files" ? "" : "none";
     if (!filesWereVisible && s.sidebar_tab === "files" && s.sidebar !== "off" && state.treeScroll !== undefined) requestAnimationFrame(()=>{ if (!state.restoringTree) $("pane-files").scrollTop=state.treeScroll; });
-    if ($("options").classList.contains("show")) app.drawOptions();
+    if ($("options").classList.contains("show") && !document.activeElement?.matches("#sets input")) app.drawOptions();
   },
   setDocument(d) {
     if($("article").dataset.renderKey !== d.renderKey || !d.renderKey) { clearMarks(); $("article").innerHTML = d.html; $("article").dataset.renderKey=d.renderKey || ""; }
@@ -918,7 +931,7 @@ const app = {
     $("document-note").textContent=d.note||"";$("document-note").hidden=!d.note;
     $("fm").textContent = d.frontMatter || "";
     $("fm").classList.toggle("show", !!d.frontMatter);
-    app.outline(d.outline || []);
+    app.outline(app.documentHeadings?.() || d.outline || []);
     app.addCopyButtons();
     app.wireLinks();
     $("doc").scrollTop = (d.scroll || 0) * $("doc").scrollHeight;
@@ -943,8 +956,8 @@ const app = {
       const symbol=document.createElement("span");symbol.className="outline-symbol";symbol.textContent="#";symbol.setAttribute("aria-hidden","true");
       const label=document.createElement("span");label.className="file-label";label.textContent=h.text;el.append(symbol,label);
       el.onclick = () => {
-        const target = app.documentAnchor(h.anchor);
-        if (target) target.scrollIntoView({ block:"start" });
+        if(state.editing)app.toggleEdit(false);
+        app.goToAnchor(h.anchor);
       };
       pane.appendChild(el);
     }
@@ -969,6 +982,7 @@ const app = {
     send({ cmd:"expand", path, request });
   },
   setTree(d) {
+    state.treeUnavailable=!!d.error;
     const pane = $("pane-files"), previous = !state.restoreTreeAfterFileAction && samePath(state.workspace || "", d.dir) ? pane.firstElementChild : null;
     state.restoreTreeAfterFileAction=false;
     const view = app.treeView();
@@ -980,6 +994,7 @@ const app = {
     $("folder-up").disabled = !d.parent;
     const entries = app.entries(d.entries || [], previous);
     if (!previous) pane.replaceChildren(entries);
+    if(d.error){const message=document.createElement("div");message.className="tree-message";message.textContent="Folder unavailable. Refresh to try again. "+d.error;pane.replaceChildren(message);return;}
     if (!previous) app.restoreTreeSession?.(d.view);
     app.filterTree();
     if (previous) {
@@ -1022,6 +1037,8 @@ const app = {
         }
         branch.appendChild(el);
       }
+      el.tabIndex=-1;el.onfocus=()=>{for(const row of $("pane-files").querySelectorAll(".item"))row.tabIndex=-1;el.tabIndex=0;};
+      el.disabled=!e.dir&&!e.openable;
       el.dataset.path = e.path; el.dataset.name = e.name;
       fillFileRow(el,e.name,e.dir,el.getAttribute("aria-expanded") === "true");
       el.setAttribute("aria-label",e.name);
@@ -1035,6 +1052,7 @@ const app = {
     const keep = new Set(branches);
     for (const node of [...box.childNodes]) if (!keep.has(node)) node.remove();
     if (!branches.length) { const empty = document.createElement("div"); empty.className="tree-message"; empty.innerHTML="<strong>No files here</strong>Open another folder or create a new note."; box.appendChild(empty); }
+    if(!box.querySelector(".item[tabindex=\"0\"]"))box.querySelector(".item:not(:disabled)")?.setAttribute("tabindex","0");
     return box;
   },
   setEntries(d) {
@@ -1109,10 +1127,11 @@ const app = {
     app.refreshFind?.();
   },
   options(open) {
+    if(!open&&!$("options").classList.contains("show"))return;
     $("options").classList.toggle("show", open);
     $("row").inert = open; $("bar").inert = open; $("find").inert = open;
     if (open) { $("opt-reset").textContent="Reset all"; delete $("opt-reset").dataset.confirm; optionsFocus = document.activeElement; $("search").value = ""; app.buildOptions(); $("search").focus(); }
-    else optionsFocus?.focus();
+    else { optionsFocus?.focus(); optionsFocus=null; }
   },
   buildOptions() {
     const rail = $("rail");
@@ -1128,6 +1147,7 @@ const app = {
     app.drawOptions();
   },
   drawOptions() {
+    const resetKey=document.activeElement?.dataset.reset;
     const focusKey = document.activeElement?.dataset.setting || document.activeElement?.closest("[data-setting]")?.dataset.setting;
     const query = ($("search").value || "").toLowerCase();
     for (const b of $("rail").children)
@@ -1148,7 +1168,8 @@ const app = {
     }
     if (!box.children.length)
       box.innerHTML = '<div class="grp" style="color:var(--dim)">Nothing matches.</div>';
-    if (focusKey) { const control=box.querySelector(`[data-setting="${focusKey}"]`); (control?.querySelector("input") || control)?.focus(); }
+    if(resetKey){box.querySelector(`[data-reset="${resetKey}"]`)?.focus();}
+    else if (focusKey) { const control=box.querySelector(`[data-setting="${focusKey}"]`); (control?.querySelector("input") || control)?.focus(); }
   },
   settingRow(key) {
     const value = state.settings[key];
@@ -1201,7 +1222,7 @@ const app = {
       control=document.createElement("div");control.className="zoom-control";
       const input=document.createElement("input");input.type="number";input.min=50;input.max=300;input.step=5;input.value=Math.round(value*100);
       input.setAttribute("aria-labelledby",label.id);input.setAttribute("aria-describedby",help.id);
-      input.onchange=()=>{if(input.value&&input.checkValidity())app.setZoom(Number(input.value)/100);};
+      input.onchange=()=>{if(input.value&&input.checkValidity())app.setDocumentZoom(Number(input.value)/100);else input.reportValidity();};
       const suffix=document.createElement("span");suffix.textContent="%";suffix.setAttribute("aria-hidden","true");control.append(input,suffix);
     } else if (CHOICES[key]) {
       control = app.selectControl(CHOICES[key].map(choice => ({value:choice,label:key === "icon_style" ? ICON_STYLE_LABELS[choice] : choiceLabel(choice)})),value,
@@ -1233,20 +1254,20 @@ const app = {
     if (!["DIV","BUTTON"].includes(control.tagName)) {
       control.onchange = () => {
         let next = control.type === "checkbox" ? control.checked : control.value;
-        if (typeof fallback === "number") { if (!control.value || !control.checkValidity()) return; next = Number(next); }
-        if(key === "zoom") app.setZoom(next);
+        if (typeof fallback === "number") { if (!control.value || !control.checkValidity()) { control.reportValidity(); app.note("Enter a number within the displayed limits."); return; } next = Number(next); }
+        if(key === "zoom") app.setDocumentZoom(next);
         else send({ cmd:"setting", key, value:next });
       };
     }
     row.appendChild(control);
 
     const reset = document.createElement("button");
-    reset.className = "rst";
+    reset.className = "rst";reset.dataset.reset=key;
     reset.textContent = "\u21ba";
     reset.title = "Reset " + (LABELS[key]?.[0] || key) + " to " + (key === "zoom" ? Math.round(fallback*100) + "%" : key === "icon_style" ? ICON_STYLE_LABELS[fallback] : choiceLabel(String(fallback)));
     if(key === "heading_styles") reset.title="Reset headings for this theme";
     reset.setAttribute("aria-label", reset.title);
-    reset.onclick = () => key === "heading_styles" ? app.saveHeadingStyle(null) : key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
+    reset.onclick = () => key === "heading_styles" ? app.saveHeadingStyle(null) : key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setDocumentZoom(fallback) : send({ cmd:"setting", key, value:fallback });
     row.appendChild(reset);
     if (key === "tab_highlight") {
       const preview=document.createElement("div");preview.className="tab-preview";preview.setAttribute("role","img");preview.setAttribute("aria-label","Preview: Current note is the active tab");
@@ -1264,10 +1285,10 @@ window.app = app;
 
 /* FIND_UI */
 
-let pinned = false;
-$("hot").onmouseenter = () => $("bar").classList.add("show");
-$("bar").onmouseleave = () => { if (!pinned) setTimeout(() => $("bar").classList.remove("show"), 200); };
-$("bar").onmouseenter = () => $("bar").classList.add("show");
+let barHideTimer, sideHideTimer;
+const revealBar=()=>{clearTimeout(barHideTimer);$("bar").classList.add("show");};
+$("hot").onmouseenter=$("bar").onmouseenter=revealBar;
+$("bar").onmouseleave=()=>{clearTimeout(barHideTimer);barHideTimer=setTimeout(()=>$("bar").classList.remove("show"),200);};
 $("b-pin").onclick = () => send({cmd:"setting", key:"chrome", value:state.settings.chrome === "always" ? "auto" : "always"});
 $("b-new").onclick = () => send({cmd:"new"});
 $("b-saveas").onclick = () => send({cmd:"saveAs", text:$("text").value});
@@ -1305,20 +1326,13 @@ $("b-view").onclick = () => {if(state.image)return;send({ cmd:"setting", key:"vi
 $("b-open").onclick = () => send({ cmd:"open" });
 $("b-save").onclick = () => send({ cmd:"save", text:$("text").value });
 $("b-edit").onclick = () => { app.toggleEdit(!state.editing); if (!state.editing) send({cmd:"preview"}); };
-$("b-side").onclick = () => {
-  const hide = state.settings.sidebar === "always" && state.settings.sidebar_tab === "files";
-  if (!hide) send({ cmd:"setting", key:"sidebar_tab", value:"files" });
-  send({ cmd:"setting", key:"sidebar", value:hide ? "off" : "always" });
-};
+$("b-side").onclick = () => send({cmd:"toggleFiles"});
 $("b-outline").onclick = () => send({ cmd:"cycleSidebar" });
 $("sidepin").onclick = () => send({ cmd:"setting", key:"sidebar",
   value: state.settings.sidebar === "always" ? "auto" : "always" });
-$("sidehot").onmouseenter = () => $("side").classList.add("show");
-$("side").onmouseleave = () => {
-  if (state.settings.sidebar === "auto" && !dragging)
-    setTimeout(() => { if (!dragging) $("side").classList.remove("show"); }, 200);
-};
-$("side").onmouseenter = () => $("side").classList.add("show");
+const revealSide=()=>{clearTimeout(sideHideTimer);$("side").classList.add("show");};
+$("sidehot").onmouseenter=$("side").onmouseenter=revealSide;
+$("side").onmouseleave=()=>{clearTimeout(sideHideTimer);if(state.settings.sidebar==="auto"&&!dragging)sideHideTimer=setTimeout(()=>{if(!dragging)$("side").classList.remove("show");},200);};
 
 let dragging = false, sidebarDrag = null;
 const finishSidebarDrag = e => {
@@ -1365,32 +1379,24 @@ app.showFind = open => {
   $("find").classList.toggle("show", open);
   $("b-find").setAttribute("aria-pressed", String(open));
   if (open) { runFind($("find-text").value); $("find-text").focus(); $("find-text").select(); }
-  else { clearMarks(); if(hadFocus) $("b-find").focus(); }
+  else { clearMarks(); if(hadFocus) (state.editing?$("text"):$("doc")).focus({preventScroll:true}); }
   app.scheduleReaderLayout?.(); app.scheduleMap?.();
 };
 $("b-find").onclick = () => app.showFind(!$("find").classList.contains("show"));
 $("find-close").onclick = () => app.showFind(false);
 $("find-next").onclick = () => step(1);
 $("find-prev").onclick = () => step(-1);
-$("find-text").oninput = e => runFind(e.target.value);
-$("text").oninput = () => { app.setDirty(true); send({cmd:"edit", text:$("text").value}); };
-$("text").onkeydown = e => {
-  if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-    e.preventDefault(); document.execCommand("insertText", false, " ".repeat(state.settings.tab_size || 4));
-  }
-};
 $("grip").onkeydown = e => { if (["ArrowLeft","ArrowRight"].includes(e.key)) { e.preventDefault(); send({cmd:"setting",key:"sidebar_width",value:state.settings.sidebar_width + (e.key === "ArrowRight" ? 20 : -20)}); } };
 $("find-text").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); step(e.shiftKey ? -1 : 1); } };
 
 $("doc").onscroll = () => {
   if(state.embeddedImage)return;
-  const h = $("doc").scrollHeight || 1;
-  send({ cmd:"scroll", value:$("doc").scrollTop / h });
+  app.queueView?.();
 };
 
 document.addEventListener("keydown", e => {
   if($("line-dialog").open || $("quick-dialog").open || $("file-dialog").open)return;
-  const ctrl = e.ctrlKey || e.metaKey;
+  const ctrl = primaryModifier(e);
   if ($("options").classList.contains("show")) {
     if (e.key === "Escape") { e.preventDefault(); app.options(false); }
     if (e.key === "Tab") {
@@ -1402,21 +1408,21 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (ctrl && e.key === ",") { e.preventDefault(); app.options(true); return; }
-  if (ctrl && e.key.toLowerCase() === "n") { e.preventDefault(); send({cmd:"new"}); return; }
-  if (ctrl && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); send({cmd:"openFolder"}); return; }
-  if (ctrl && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); $("b-saveas").onclick(); return; }
-  if (ctrl && e.key.toLowerCase() === "o") { e.preventDefault(); send({ cmd:"open" }); }
-  else if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); send({ cmd:"save", text:$("text").value }); }
-  else if (ctrl && e.key.toLowerCase() === "e") { e.preventDefault(); $("b-edit").onclick(); }
-  else if (ctrl && e.key.toLowerCase() === "b") { e.preventDefault(); $("b-side").onclick(); }
-  else if (ctrl && e.key.toLowerCase() === "g") { e.preventDefault(); app.goToLine(); }
-  else if ((state.platform === "macos" ? e.metaKey && e.altKey && e.key.toLowerCase() === "f" : ctrl && e.key.toLowerCase() === "h")) { e.preventDefault(); app.showFind(true); $("replace-row").hidden=false; $("find-replace").setAttribute("aria-expanded","true"); $("replace-text").focus(); }
-  else if (ctrl && e.key.toLowerCase() === "f") { e.preventDefault(); $("b-find").onclick(); }
-  else if (ctrl && e.key.toLowerCase() === "u") { e.preventDefault(); $("b-view").onclick(); }
-  else if (ctrl && !e.altKey && (e.key === "=" || e.key === "+" || e.code === "NumpadAdd")) { e.preventDefault(); $("b-zoomin").onclick(); }
-  else if (ctrl && !e.altKey && (e.key === "-" || e.key === "_" || e.code === "NumpadSubtract")) { e.preventDefault(); $("b-zoomout").onclick(); }
+  if (ctrl && commandKey(e) === "n") { e.preventDefault(); send({cmd:"new"}); return; }
+  if (ctrl && e.shiftKey && commandKey(e) === "o") { e.preventDefault(); send({cmd:"openFolder"}); return; }
+  if (ctrl && e.shiftKey && commandKey(e) === "s") { e.preventDefault(); $("b-saveas").click(); return; }
+  if (ctrl && commandKey(e) === "o") { e.preventDefault(); send({ cmd:"open" }); }
+  else if (ctrl && commandKey(e) === "s") { e.preventDefault(); $("b-save").click(); }
+  else if (ctrl && commandKey(e) === "e") { e.preventDefault(); $("b-edit").click(); }
+  else if (ctrl && commandKey(e) === "b") { e.preventDefault(); $("b-side").click(); }
+  else if (ctrl && commandKey(e) === (state.platform==="macos"?"l":"g")) { e.preventDefault(); app.goToLine(); }
+  else if ((state.platform === "macos" ? e.metaKey && e.altKey && commandKey(e) === "f" : ctrl && commandKey(e) === "h")) { e.preventDefault(); if(state.image||state.readOnly)return; app.showFind(true); $("replace-row").hidden=false; $("find-replace").setAttribute("aria-expanded","true"); $("replace-text").focus(); }
+  else if (ctrl && commandKey(e) === "f") { e.preventDefault(); $("b-find").click(); }
+  else if (ctrl && commandKey(e) === "u") { e.preventDefault(); $("b-view").click(); }
+  else if (ctrl && !e.altKey && (e.key === "=" || e.key === "+" || e.code === "NumpadAdd")) { e.preventDefault(); $("b-zoomin").click(); }
+  else if (ctrl && !e.altKey && (e.key === "-" || e.key === "_" || e.code === "NumpadSubtract")) { e.preventDefault(); $("b-zoomout").click(); }
   else if (ctrl && !e.altKey && e.key === "0") { e.preventDefault(); app.setZoom(1); }
-  else if (e.key === "Escape") { $("find-close").onclick(); app.options(false); }
+  else if (e.key === "Escape") { if($("find").classList.contains("show"))app.showFind(false); }
   else if (e.key === "F3") step(e.shiftKey ? -1 : 1);
 });
 /* EDITING_UI */

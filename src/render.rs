@@ -1,9 +1,9 @@
 use std::path::Path;
 
+use crate::formatting::escape;
 use pulldown_cmark::{html, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Serialize;
 use syntect::highlighting::Theme as CodeTheme;
-use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
 use two_face::theme::EmbeddedLazyThemeSet;
 
@@ -30,16 +30,8 @@ pub struct Document {
 pub struct Renderer {
     syntaxes: SyntaxSet,
     prepared: std::cell::RefCell<std::collections::HashMap<String, std::sync::Arc<CodeTheme>>>,
-    parsed: std::cell::RefCell<Option<(u64, std::sync::Arc<Vec<Event<'static>>>)>>,
     cancellation: Option<(std::sync::Arc<std::sync::atomic::AtomicU64>, u64)>,
     themes: EmbeddedLazyThemeSet,
-}
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 fn anchor_for(text: &str, used: &mut std::collections::HashMap<String, usize>) -> String {
@@ -140,7 +132,6 @@ impl Renderer {
             // batch files and the rest colour like everything else.
             syntaxes: two_face::syntax::extra_newlines(),
             prepared: Default::default(),
-            parsed: Default::default(),
             cancellation: None,
             themes: two_face::theme::extra(),
         }
@@ -169,42 +160,55 @@ impl Renderer {
             return cached.clone();
         }
         let base = self.themes.get(crate::theme::code_theme_name(&theme.id));
-        if theme.text_contrast == 0
-            && matches!(
-                theme.id.as_str(),
-                "light"
-                    | "dark"
-                    | "dracula"
-                    | "solarized-dark"
-                    | "solarized-light"
-                    | "nord"
-                    | "gruvbox"
-                    | "monokai"
-            )
-        {
-            return std::sync::Arc::new(base.clone());
-        }
         let colour = |hex: &str| syntect::highlighting::Color {
-            r: u8::from_str_radix(&hex[1..3], 16).unwrap_or(0),
-            g: u8::from_str_radix(&hex[3..5], 16).unwrap_or(0),
-            b: u8::from_str_radix(&hex[5..7], 16).unwrap_or(0),
+            r: hex
+                .get(1..3)
+                .and_then(|c| u8::from_str_radix(c, 16).ok())
+                .unwrap_or(0),
+            g: hex
+                .get(3..5)
+                .and_then(|c| u8::from_str_radix(c, 16).ok())
+                .unwrap_or(0),
+            b: hex
+                .get(5..7)
+                .and_then(|c| u8::from_str_radix(c, 16).ok())
+                .unwrap_or(0),
             a: 255,
         };
+        let classic = matches!(
+            theme.id.as_str(),
+            "light"
+                | "dark"
+                | "dracula"
+                | "solarized-dark"
+                | "solarized-light"
+                | "nord"
+                | "gruvbox"
+                | "monokai"
+        );
+        let background = if classic {
+            base.settings
+                .background
+                .map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
+                .unwrap_or_else(|| theme.panel.clone())
+        } else {
+            theme.panel.clone()
+        };
         let mut adjusted = base.clone();
-        adjusted.settings.background = Some(colour(&theme.panel));
+        adjusted.settings.background = Some(colour(&background));
         adjusted.settings.foreground =
-            Some(colour(&crate::theme::guard(&theme.fg, &theme.panel, 4.5)));
+            Some(colour(&crate::theme::guard(&theme.fg, &background, 4.5)));
         for scope in &mut adjusted.scopes {
             if let Some(fg) = scope.style.foreground {
                 let hex = format!("#{:02x}{:02x}{:02x}", fg.r, fg.g, fg.b);
                 scope.style.foreground = Some(colour(&crate::theme::strengthen(
-                    &crate::theme::guard(&hex, &theme.panel, 4.5),
-                    &theme.panel,
+                    &crate::theme::guard(&hex, &background, 4.5),
+                    &background,
                     theme.text_contrast,
                 )));
             }
             if scope.style.background.is_some() {
-                scope.style.background = Some(colour(&theme.panel));
+                scope.style.background = Some(colour(&background));
             }
         }
         let adjusted = std::sync::Arc::new(adjusted);
@@ -240,12 +244,32 @@ impl Renderer {
         theme: &CodeTheme,
         colour: bool,
     ) -> String {
-        if !colour {
+        if !colour || code.lines().any(|line| line.len() > 16 * 1024) {
             return format!("<pre class=\"plain\"><code>{}</code></pre>", escape(code));
         }
-        // Inline styles rather than CSS classes: measured smaller and faster.
-        highlighted_html_for_string(code, &self.syntaxes, syntax, theme)
-            .unwrap_or_else(|_| format!("<pre>{}</pre>", escape(code)))
+        let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
+        let (mut output, background) = syntect::html::start_highlighted_html_snippet(theme);
+        for line in syntect::util::LinesWithEndings::from(code) {
+            if self.cancelled() {
+                return String::new();
+            }
+            let rendered = highlighter
+                .highlight_line(line, &self.syntaxes)
+                .ok()
+                .and_then(|regions| {
+                    syntect::html::styled_line_to_highlighted_html(
+                        &regions,
+                        syntect::html::IncludeBackground::IfDifferent(background),
+                    )
+                    .ok()
+                });
+            let Some(rendered) = rendered else {
+                return format!("<pre><code>{}</code></pre>", escape(code));
+            };
+            output.push_str(&rendered);
+        }
+        output.push_str("</pre>\n");
+        output
     }
 
     fn highlight(&self, code: &str, language: &str, theme: &CodeTheme, colour: bool) -> String {
@@ -344,34 +368,14 @@ impl Renderer {
 
         // Colouring every block up front is what makes a huge document slow,
         // so past a threshold the code is shown plain and says so.
-        let hash = crate::storage::fingerprint(body_text.as_bytes());
-        let cached = self
-            .parsed
-            .borrow()
-            .as_ref()
-            .filter(|(key, _)| *key == hash)
-            .map(|(_, events)| events.clone());
-        let parsed = cached.unwrap_or_else(|| {
-            std::sync::Arc::new(
-                Parser::new_ext(
-                    body_text,
-                    Options::ENABLE_TABLES
-                        | Options::ENABLE_FOOTNOTES
-                        | Options::ENABLE_STRIKETHROUGH
-                        | Options::ENABLE_TASKLISTS
-                        | Options::ENABLE_GFM
-                        | Options::ENABLE_DEFINITION_LIST,
-                )
-                .map(Event::into_static)
-                .collect::<Vec<_>>(),
-            )
-        });
-        if body_text.len() <= 4 * 1024 * 1024 {
-            *self.parsed.borrow_mut() = Some((hash, parsed.clone()));
-        }
+        let options = Options::ENABLE_TABLES
+            | Options::ENABLE_FOOTNOTES
+            | Options::ENABLE_STRIKETHROUGH
+            | Options::ENABLE_TASKLISTS
+            | Options::ENABLE_GFM
+            | Options::ENABLE_DEFINITION_LIST;
         let mut in_code = false;
-        let code_bytes: usize = parsed
-            .iter()
+        let code_bytes: usize = Parser::new_ext(body_text, options)
             .filter_map(|event| match event {
                 Event::Start(Tag::CodeBlock(_)) => {
                     in_code = true;
@@ -387,13 +391,14 @@ impl Renderer {
             .sum();
         let colour =
             settings.syntax_colour && code_bytes <= settings.highlight_limit_kb as usize * 1024;
-        let parser = parsed.iter().cloned();
+        let parser = Parser::new_ext(body_text, options);
         let mut events: Vec<Event> = Vec::new();
         let mut outline: Vec<Heading> = Vec::new();
         let mut used_anchors = std::collections::HashMap::new();
         let mut footnotes = std::collections::HashMap::new();
         let mut html_block: Option<String> = None;
         let mut nested_images = 0usize;
+        let sanitizer = crate::formatting::Sanitizer::new(base, settings.remote_images);
 
         let mut code = String::new();
         let mut language: Option<String> = None;
@@ -409,20 +414,24 @@ impl Renderer {
                     front_matter: String::new(),
                 };
             }
+            if sanitizer.hidden()
+                && !matches!(
+                    event,
+                    Event::Html(_)
+                        | Event::InlineHtml(_)
+                        | Event::Start(Tag::HtmlBlock)
+                        | Event::End(TagEnd::HtmlBlock)
+                )
+            {
+                continue;
+            }
             match event {
                 Event::Start(Tag::HtmlBlock) => {
                     html_block = Some(String::new());
                 }
                 Event::End(TagEnd::HtmlBlock) => {
                     if let Some(raw) = html_block.take() {
-                        events.push(Event::Html(
-                            crate::formatting::html_with_options(
-                                &raw,
-                                base,
-                                settings.remote_images,
-                            )
-                            .into(),
-                        ));
+                        events.push(Event::Html(sanitizer.push(&raw).into()));
                     }
                 }
                 Event::Html(raw) if html_block.is_some() => {
@@ -510,8 +519,11 @@ impl Renderer {
                         // Relative paths are resolved here and served through
                         // the app's own scoped protocol; an HTML string has no
                         // base location of its own.
-                        let resolved = assets::image_url(&src, base, settings.remote_images)
-                            .unwrap_or_default();
+                        let Some(resolved) = assets::image_url(&src, base, settings.remote_images)
+                        else {
+                            events.push(Event::Text(alt.into()));
+                            continue;
+                        };
                         events.push(Event::Html(
                             format!(
                                 "<img src=\"{}\" alt=\"{}\" title=\"{}\">",
@@ -526,14 +538,7 @@ impl Renderer {
 
                 Event::Html(raw) | Event::InlineHtml(raw) => {
                     if image.is_none() {
-                        events.push(Event::Html(
-                            crate::formatting::html_with_options(
-                                &raw,
-                                base,
-                                settings.remote_images,
-                            )
-                            .into(),
-                        ));
+                        events.push(Event::Html(sanitizer.push(&raw).into()));
                     }
                 }
                 Event::Start(Tag::Link {
@@ -594,6 +599,7 @@ impl Renderer {
             }
         }
 
+        events.push(Event::Html(sanitizer.finish().into()));
         let mut body = String::new();
         html::push_html(&mut body, events.into_iter());
 

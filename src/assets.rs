@@ -110,12 +110,7 @@ pub fn decode(text: &str) -> String {
     }
     String::from_utf8_lossy(&out).into_owned()
 }
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
+use crate::formatting::escape;
 pub fn fragment(value: &str) -> String {
     let decoded = decode(value.trim_start_matches('#'));
     let decoded = decoded.strip_prefix("user-content-").unwrap_or(&decoded);

@@ -184,17 +184,12 @@ impl App {
     }
 
     fn theme(&self) -> theme::Theme {
-        let mut t = theme::find(
+        theme::find(
             self.preview_theme
                 .as_deref()
                 .unwrap_or(&self.settings.theme),
-        );
-        // Nothing may end up unreadable, whatever the combination.
-        t.text_contrast = self.settings.text_contrast;
-        t.fg = theme::strengthen(&theme::guard(&t.fg, &t.bg, 4.5), &t.bg, t.text_contrast);
-        t.dim = theme::guard(&t.dim, &t.panel, 4.5);
-        t.link = theme::strengthen(&theme::guard(&t.link, &t.bg, 4.5), &t.bg, t.text_contrast);
-        t
+        )
+        .readable(self.settings.text_contrast)
     }
 
     fn persist_settings(&mut self) {
@@ -1483,6 +1478,17 @@ impl App {
                     self.persist_settings();
                 }
             }
+            "toggleFiles" => {
+                if self.settings.sidebar != "off" && self.settings.sidebar_tab == "files" {
+                    self.settings.sidebar_return = self.settings.sidebar.clone();
+                    self.settings.sidebar = "off".into();
+                } else {
+                    self.settings.sidebar = self.settings.sidebar_return.clone();
+                    self.settings.sidebar_tab = "files".into();
+                }
+                self.send_settings();
+                self.persist_settings();
+            }
             "cycleSidebar" => {
                 self.settings.cycle_sidebar();
                 self.send_settings();
@@ -2052,7 +2058,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Event::UserEvent(UserEvent::FileOperation(result)) => app.finish_file_operation(result),
             Event::UserEvent(UserEvent::TreeLoaded{path,request,root,serial,result})=>{
-                if root{if serial==app.tree_serial{match result{Ok(entries)=>{if !paths::same(Path::new(&app.settings.workspace), &path) {app.settings.expanded_folders.clear();app.settings.tree_scroll=0.0;app.settings.tree_filter.clear();}app.tree_dir=path.clone();app.settings.workspace=path.to_string_lossy().into_owned();app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":entries,"view":{"expanded":app.settings.expanded_folders,"scroll":app.settings.tree_scroll,"filter":app.settings.tree_filter}})));app.persist_settings();},Err(error)=>app.notify(&format!("Cannot read folder: {}",error))}}}
+                if root{if serial==app.tree_serial{match result{Ok(entries)=>{if !paths::same(Path::new(&app.settings.workspace), &path) {app.settings.expanded_folders.clear();app.settings.tree_scroll=0.0;app.settings.tree_filter.clear();}app.tree_dir=path.clone();app.settings.workspace=path.to_string_lossy().into_owned();app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":entries,"view":{"expanded":app.settings.expanded_folders,"scroll":app.settings.tree_scroll,"filter":app.settings.tree_filter}})));app.persist_settings();},Err(error)=>{app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":[],"error":error})));app.notify(&format!("Cannot read folder: {}",error));}}}}
                 else{let(entries,error)=match result{Ok(entries)=>(entries,None),Err(error)=>(Vec::new(),Some(error))};app.run_js(format!("window.app.setEntries({});",json!({"path":path.to_string_lossy(),"request":request,"entries":entries,"error":error})));}
             }
             Event::UserEvent(UserEvent::DiskChecked { tab, path, epoch, observed }) => {

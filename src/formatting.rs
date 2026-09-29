@@ -5,11 +5,18 @@ use html5ever::tokenizer::{
 };
 use std::{cell::RefCell, path::Path};
 
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+pub fn escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn colour(value: &str) -> Option<String> {
@@ -103,12 +110,21 @@ fn style(input: &str) -> String {
 
 struct Formatter<'a> {
     output: RefCell<String>,
+    hidden: RefCell<Option<String>>,
     base: Option<&'a Path>,
     remote: bool,
 }
 impl TokenSink for Formatter<'_> {
     type Handle = ();
     fn process_token(&self, token: Token, _: u64) -> TokenSinkResult<()> {
+        let hidden = self.hidden.borrow().clone();
+        if let Some(hidden) = hidden {
+            if matches!(&token, Token::TagToken(tag) if tag.kind == TagKind::EndTag && tag.name.as_ref() == hidden)
+            {
+                *self.hidden.borrow_mut() = None;
+            }
+            return TokenSinkResult::Continue;
+        }
         let mut out = self.output.borrow_mut();
         match token {
             Token::CharacterTokens(text) => out.push_str(&escape(&text)),
@@ -167,11 +183,20 @@ impl TokenSink for Formatter<'_> {
                         | "h6"
                 );
                 if !allowed {
-                    out.push_str(&escape(&format!(
-                        "<{}{}>",
-                        if tag.kind == TagKind::EndTag { "/" } else { "" },
-                        name
-                    )));
+                    if tag.kind == TagKind::StartTag
+                        && matches!(
+                            name,
+                            "script"
+                                | "style"
+                                | "template"
+                                | "iframe"
+                                | "noscript"
+                                | "textarea"
+                                | "title"
+                        )
+                    {
+                        *self.hidden.borrow_mut() = Some(name.to_owned());
+                    }
                     return TokenSinkResult::Continue;
                 }
                 let void = matches!(name, "br" | "hr" | "img" | "input");
@@ -194,6 +219,7 @@ impl TokenSink for Formatter<'_> {
                 if name == "input" {
                     out.push_str(" type=\"checkbox\" disabled");
                 }
+                let mut anchor_written = false;
                 for attr in tag.attrs {
                     if !attr.name.ns.is_empty() {
                         continue;
@@ -209,6 +235,17 @@ impl TokenSink for Formatter<'_> {
                             }
                         }
                         "title" => attributes.push(("title", value.into())),
+                        "id" | "name"
+                            if !anchor_written
+                                && matches!(
+                                    name,
+                                    "a" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                                )
+                                && !value.trim().is_empty() =>
+                        {
+                            attributes.push(("id", assets::fragment(value)));
+                            anchor_written = true;
+                        }
                         "alt" if name == "img" => attributes.push(("alt", value.into())),
                         "href" if name == "a" => {
                             if let Some(target) = assets::external(value) {
@@ -234,6 +271,12 @@ impl TokenSink for Formatter<'_> {
                                 if (1..=8192).contains(&n) {
                                     attributes.push((key, n.to_string()));
                                 }
+                            } else if let Some(percent) = value
+                                .strip_suffix('%')
+                                .and_then(|n| n.parse::<u8>().ok())
+                                .filter(|n| (1..=100).contains(n))
+                            {
+                                attributes.push((key, format!("{percent}%")));
                             }
                         }
                         "colspan" | "rowspan" if matches!(name, "td" | "th") => {
@@ -243,8 +286,11 @@ impl TokenSink for Formatter<'_> {
                                 }
                             }
                         }
-                        "align" if ["left", "center", "right", "justify"].contains(&value) => {
-                            attributes.push(("align", value.into()))
+                        "align"
+                            if ["left", "center", "right", "justify"]
+                                .contains(&value.to_ascii_lowercase().as_str()) =>
+                        {
+                            attributes.push(("align", value.to_ascii_lowercase()))
                         }
                         "open" if name == "details" => out.push_str(" open"),
                         "checked" if name == "input" => out.push_str(" checked"),
@@ -270,16 +316,41 @@ pub fn html(fragment: &str, base: Option<&Path>) -> String {
     html_with_options(fragment, base, true)
 }
 
+pub struct Sanitizer<'a> {
+    tokenizer: Tokenizer<Formatter<'a>>,
+}
+impl<'a> Sanitizer<'a> {
+    pub fn new(base: Option<&'a Path>, remote: bool) -> Self {
+        Self {
+            tokenizer: Tokenizer::new(
+                Formatter {
+                    output: RefCell::new(String::new()),
+                    hidden: RefCell::new(None),
+                    base,
+                    remote,
+                },
+                TokenizerOpts::default(),
+            ),
+        }
+    }
+    pub fn hidden(&self) -> bool {
+        self.tokenizer.sink.hidden.borrow().is_some()
+    }
+    pub fn push(&self, fragment: &str) -> String {
+        let input = BufferQueue::default();
+        input.push_back(fragment.into());
+        let _ = self.tokenizer.feed(&input);
+        std::mem::take(&mut *self.tokenizer.sink.output.borrow_mut())
+    }
+    pub fn finish(&self) -> String {
+        self.tokenizer.end();
+        std::mem::take(&mut *self.tokenizer.sink.output.borrow_mut())
+    }
+}
+#[cfg(test)]
 pub fn html_with_options(fragment: &str, base: Option<&Path>, remote: bool) -> String {
-    let sink = Formatter {
-        output: RefCell::new(String::new()),
-        base,
-        remote,
-    };
-    let input = BufferQueue::default();
-    input.push_back(fragment.into());
-    let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
-    let _ = tokenizer.feed(&input);
-    tokenizer.end();
-    tokenizer.sink.output.into_inner()
+    let sanitizer = Sanitizer::new(base, remote);
+    let mut output = sanitizer.push(fragment);
+    output.push_str(&sanitizer.finish());
+    output
 }

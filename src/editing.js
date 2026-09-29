@@ -39,6 +39,8 @@ const editingTools={
  }
 };
 app.editingKey=(event,node)=>{
+ if(primaryModifier(event)&&commandKey(event)==='m'){event.preventDefault();state.tabNavigation=!state.tabNavigation;app.note(state.tabNavigation?'Tab moves focus. Press the same shortcut to indent again.':'Tab indents text.');return;}
+ if(event.key==='Tab'&&state.tabNavigation)return;
  if(event.isComposing||node.readOnly||event.ctrlKey||event.metaKey||event.altKey)return;
  let edit;
  if(event.key==='Tab')edit=editingTools.indent(node.value,node.selectionStart,node.selectionEnd,state.settings.tab_size||4,state.settings.tab_style==='tabs',event.shiftKey);

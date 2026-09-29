@@ -46,7 +46,7 @@ impl RenderWorker {
                 }
                 renderer.cancel_token(active.clone(), task.generation);
                 let key = format!(
-                    "{:?}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+                    "{:?}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
                     task.path,
                     task.tab,
                     task.revision,
@@ -56,7 +56,8 @@ impl RenderWorker {
                     task.settings.syntax_colour,
                     task.settings.highlight_limit_kb,
                     task.settings.plain_text_above_mb,
-                    task.settings.remote_images
+                    task.settings.remote_images,
+                    crate::storage::fingerprint(task.text.as_bytes())
                 );
                 let document = cache
                     .iter()
