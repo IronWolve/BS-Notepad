@@ -243,7 +243,14 @@ impl TokenSink for Formatter<'_> {
                                 )
                                 && !value.trim().is_empty() =>
                         {
-                            attributes.push(("id", assets::fragment(value)));
+                            attributes.push((
+                                "id",
+                                if value.starts_with("doc-heading-") {
+                                    value.into()
+                                } else {
+                                    format!("doc-heading-{value}")
+                                },
+                            ));
                             anchor_written = true;
                         }
                         "alt" if name == "img" => attributes.push(("alt", value.into())),

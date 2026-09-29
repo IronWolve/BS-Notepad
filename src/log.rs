@@ -1,14 +1,12 @@
-use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const RING: usize = 500;
-
 struct State {
-    file: PathBuf,
-    recent: VecDeque<String>,
+    directory: PathBuf,
+    date: String,
+    file: Option<std::fs::File>,
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
@@ -54,40 +52,51 @@ fn today() -> String {
 }
 
 pub fn init(root: &Path) {
-    let dir = root.join("logs");
-    let _ = std::fs::create_dir_all(&dir);
-    let file = dir.join(format!("{}.log", today()));
+    let directory = root.join("logs");
+    let _ = std::fs::create_dir_all(&directory);
     let _ = STATE.set(Mutex::new(State {
-        file,
-        recent: VecDeque::with_capacity(RING),
+        directory,
+        date: String::new(),
+        file: None,
     }));
 }
 
 pub fn line(msg: &str) {
     let Some(state) = STATE.get() else { return };
-    let Ok(mut s) = state.lock() else { return };
+    let Ok(mut state) = state.try_lock() else {
+        return;
+    };
+    let date = today();
+    if state.date != date || state.file.is_none() {
+        state.date = date.clone();
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        state.file = options
+            .open(
+                state
+                    .directory
+                    .join(format!("{}-{date}.log", env!("CARGO_PKG_NAME"))),
+            )
+            .ok();
+    }
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() % 86_400)
         .unwrap_or(0);
-    // UTC, and labelled as such: reading a log against the wrong clock wastes
-    // more time than the offset saves.
-    let entry = format!(
-        "{:02}:{:02}:{:02}Z {}",
-        stamp / 3600,
-        (stamp % 3600) / 60,
-        stamp % 60,
-        msg
-    );
-    if s.recent.len() == RING {
-        s.recent.pop_front();
-    }
-    s.recent.push_back(entry.clone());
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&s.file)
-    {
-        let _ = writeln!(f, "{}", entry);
+    if let Some(file) = &mut state.file {
+        let _ = writeln!(
+            file,
+            "{} {:02}:{:02}:{:02}Z {}",
+            date,
+            stamp / 3600,
+            (stamp % 3600) / 60,
+            stamp % 60,
+            msg
+        );
     }
 }

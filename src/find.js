@@ -81,6 +81,15 @@ app.replaceFound=all=>{
 for(const id of ['find-case','find-word'])$(id).onclick=()=>{$(id).setAttribute('aria-pressed',String($(id).getAttribute('aria-pressed')!=='true'));runFind($('find-text').value);};
 $('find-replace').onclick=()=>{$('replace-row').hidden=!$('replace-row').hidden;$('find-replace').setAttribute('aria-expanded',String(!$('replace-row').hidden));if(!$('replace-row').hidden)$('replace-text').focus();};
 $('replace-one').onclick=()=>app.replaceFound(false);$('replace-all').onclick=()=>app.replaceFound(true);
+function patchLineStarts(starts,start,end,insert) {
+ const upper=offset=>{let low=0,high=starts.length;while(low<high){const mid=(low+high)>>>1;if(starts[mid]<=offset)low=mid+1;else high=mid;}return low;};
+ const first=upper(start),last=upper(end),delta=insert.length-(end-start),added=[];let pos=-1;
+ while((pos=insert.indexOf('\n',pos+1))!==-1)added.push(start+pos+1);
+ if(added.length>4096)return starts.slice(0,first).concat(added,starts.slice(last).map(offset=>offset+delta));
+ starts.splice(first,last-first,...added);for(let index=first+added.length;index<starts.length;index++)starts[index]+=delta;return starts;
+}
+app.patchLines=(node,revision,start,end,insert,length)=>{const cached=lineCache.get(node);if(cached&&Number(cached.revision)===revision){cached.starts=patchLineStarts(cached.starts,start,end,insert);cached.revision=String(revision+1);cached.length=length;}};
+app.invalidateLines=node=>lineCache.delete(node);
 function editorLines(editor) {
  const revision=editor.dataset.revision,value=editor.value,cached=lineCache.get(editor);
  if(cached&&cached.revision===revision&&cached.length===value.length)return cached.starts;

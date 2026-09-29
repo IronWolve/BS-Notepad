@@ -104,6 +104,7 @@ pub struct Loaded {
     pub format: TextFormat,
     pub fingerprint: u64,
     pub read_only: bool,
+    pub write_protected: bool,
 }
 fn open_regular(path: &Path) -> io::Result<(std::fs::File, std::fs::Metadata)> {
     if !std::fs::metadata(path)?.is_file() {
@@ -145,6 +146,7 @@ pub fn read(path: &Path, limit_mb: u32) -> io::Result<Loaded> {
             format: TextFormat::default(),
             fingerprint: 0,
             read_only: true,
+            write_protected: false,
         });
     }
     let limit = (limit_mb as usize * 1024 * 1024).min(MAX_EDIT_BYTES);
@@ -216,7 +218,8 @@ pub fn read(path: &Path, limit_mb: u32) -> io::Result<Loaded> {
         source: normalize(&text),
         format,
         fingerprint,
-        read_only,
+        read_only: read_only || meta.permissions().readonly(),
+        write_protected: !read_only && meta.permissions().readonly(),
     })
 }
 pub fn disk_fingerprint(path: &Path) -> io::Result<u64> {
@@ -258,7 +261,7 @@ fn sync_file(file: &std::fs::File) -> io::Result<()> {
 
 #[cfg(test)]
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let report = write_report(path, bytes, false, |parent| {
+    let report = write_report(path, bytes, false, None, |parent| {
         sync_file(&std::fs::File::open(parent)?)
     })?;
     if let Some(warning) = report.warning {
@@ -268,7 +271,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let report = write_report(path, bytes, true, |parent| {
+    let report = write_report(path, bytes, true, None, |parent| {
         sync_file(&std::fs::File::open(parent)?)
     })?;
     if let Some(warning) = report.warning {
@@ -277,8 +280,12 @@ pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-pub fn write_document(path: &Path, bytes: &[u8]) -> io::Result<WriteReport> {
-    write_report(path, bytes, false, |parent| {
+pub fn write_checked_document(
+    path: &Path,
+    bytes: &[u8],
+    expected: Option<u64>,
+) -> io::Result<WriteReport> {
+    write_report(path, bytes, false, Some(expected), |parent| {
         sync_file(&std::fs::File::open(parent)?)
     })
 }
@@ -287,6 +294,7 @@ fn write_report(
     path: &Path,
     bytes: &[u8],
     private: bool,
+    expected: Option<Option<u64>>,
     sync_parent: impl FnOnce(&Path) -> io::Result<()>,
 ) -> io::Result<WriteReport> {
     let resolved;
@@ -331,28 +339,24 @@ fn write_report(
     ));
     let mut created = false;
     let result = (|| {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temp)?;
+        let mut file = crate::file_metadata::create_temp(&temp, metadata.as_ref())?;
         created = true;
-        if !private {
-            if let Some(meta) = &metadata {
-                file.set_permissions(meta.permissions())?;
-            }
+        if !private && metadata.is_some() {
+            crate::file_metadata::preserve(path, &file)?;
         }
         file.write_all(bytes)?;
         sync_file(&file)?;
         drop(file);
-        if metadata.is_some() {
-            std::fs::rename(&temp, path)?;
-        } else {
-            crate::workspace_files::rename_no_replace(&temp, path)?;
+        if let Some(expected) = expected {
+            if crate::saving::observe(path)? != expected {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "File changed while the save was being prepared.",
+                ));
+            }
         }
+        let metadata_warning =
+            crate::file_metadata::replace(&temp, path, metadata.is_some(), private)?;
         #[cfg(unix)]
         let warning = sync_parent(parent).err().map(|error| {
             format!("Saved, but directory durability could not be confirmed: {error}")
@@ -362,7 +366,9 @@ fn write_report(
             let _ = sync_parent;
             None
         };
-        Ok(WriteReport { warning })
+        Ok(WriteReport {
+            warning: warning.or(metadata_warning),
+        })
     })();
     if result.is_err() && created {
         let _ = std::fs::remove_file(&temp);
@@ -372,7 +378,7 @@ fn write_report(
 
 #[cfg(test)]
 pub fn write_with_failed_directory_sync(path: &Path, bytes: &[u8]) -> io::Result<WriteReport> {
-    write_report(path, bytes, false, |_| {
+    write_report(path, bytes, false, None, |_| {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "test directory sync refusal",

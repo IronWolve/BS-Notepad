@@ -601,8 +601,8 @@ body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-sele
       <button id="folder-new" class="explorer-action" aria-label="New note" title="New note"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 14h8M12 10v8"/></svg></button>
       <button id="folder-open" class="explorer-action" aria-label="Open folder" title="Open folder (Ctrl+Shift+O)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2M3 9h18l-3 11H2z"/></svg></button>
       <button id="folder-refresh" class="explorer-action" aria-label="Refresh folder" title="Refresh folder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-4l2 3M4 17l2 3a8 8 0 0 0 13-4"/></svg></button>
-      <button id="folder-dates" class="explorer-action" aria-label="Show modified dates" aria-pressed="false" title="Show modified dates"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M7 2v4M17 2v4M3 9h18M7 13h3M7 17h3"/><circle cx="16" cy="15" r="3"/><path d="M16 13v2l1 1"/></svg></button>
-      <button id="folder-sort" class="explorer-action" aria-label="Sort by modified date, newest first" aria-pressed="false" title="Sort by modified date · newest first"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11M4 10h8M4 15h5M19 4v16m-3-3 3 3 3-3"/></svg></button>
+      <button id="folder-dates" class="explorer-action" aria-label="Modified dates" aria-pressed="false" title="Show modified dates"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M7 2v4M17 2v4M3 9h18M7 13h3M7 17h3"/><circle cx="16" cy="15" r="3"/><path d="M16 13v2l1 1"/></svg></button>
+      <button id="folder-sort" class="explorer-action" aria-label="Sort by modified date" aria-pressed="false" title="Sort by modified date · newest first"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11M4 10h8M4 15h5M19 4v16m-3-3 3 3 3-3"/></svg></button>
       <button id="sidepin" class="explorer-action" aria-label="Pin sidebar" title="Keep sidebar visible"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4zM12 15v7"/></svg></button>
     </div>
     <div id="file-tools"><div id="filter-wrap"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="tree-filter" aria-label="Filter loaded files" placeholder="Filter files…" title="Filter files in the folders you have expanded"></div></div>
@@ -1063,7 +1063,7 @@ const app = {
       el.disabled=!e.dir&&!e.openable;
       el.dataset.path = e.path; el.dataset.name = e.name;el.dataset.modified=e.modified??"";
       fillFileRow(el,e.name,e.dir,el.getAttribute("aria-expanded") === "true");
-      el.setAttribute("aria-label",e.name);
+      el.setAttribute("aria-label",e.name);app.updateFileDate?.(el);
       const current = samePath(e.path,state.path);
       el.classList.toggle("current",current); el.setAttribute("aria-current",String(current));
       el.title = fileAppearance(e.name,e.dir).type + " · " + e.path;
@@ -1278,7 +1278,7 @@ const app = {
     control.setAttribute("aria-labelledby", label.id);
     control.setAttribute("aria-describedby", help.id);
     control.dataset.setting = key;
-    if (key === "close_to_tray" && !state.trayAvailable) { control.disabled = true; help.textContent = "System tray is available in the Windows build."; }
+    if (key === "close_to_tray" && !state.trayAvailable) { control.disabled = true; help.textContent = state.platform==="windows"?"The system tray could not start in this session. Closing the window will quit.":"System tray is available in the Windows build."; }
     if (!["DIV","BUTTON"].includes(control.tagName)) {
       control.onchange = () => {
         let next = control.type === "checkbox" ? control.checked : control.value;

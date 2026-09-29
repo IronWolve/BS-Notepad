@@ -9,7 +9,11 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
     if let Ok(entries) = std::fs::read_dir(root.join("logs")) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let stem = name.strip_suffix(".log").unwrap_or("");
+            let prefix = format!("{}-", env!("CARGO_PKG_NAME"));
+            let stem = name
+                .strip_prefix(&prefix)
+                .and_then(|name| name.strip_suffix(".log"))
+                .unwrap_or("");
             let dated = stem.len() == 10
                 && stem.bytes().enumerate().all(|(i, b)| {
                     if i == 4 || i == 7 {
@@ -18,12 +22,19 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
                         b.is_ascii_digit()
                     }
                 });
-            if !dated || entry.file_type()?.is_symlink() || !entry.file_type()?.is_file() {
+            let kind = match entry.file_type() {
+                Ok(kind) => kind,
+                Err(_) => {
+                    failed += 1;
+                    continue;
+                }
+            };
+            if !dated || kind.is_symlink() || !kind.is_file() {
                 continue;
             }
             if entry
-                .metadata()?
-                .modified()
+                .metadata()
+                .and_then(|metadata| metadata.modified())
                 .ok()
                 .and_then(|t| SystemTime::now().duration_since(t).ok())
                 .is_some_and(|age| age > Duration::from_secs(days as u64 * 86400))
@@ -38,11 +49,18 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
     }
     let mut archives = Vec::new();
     for entry in std::fs::read_dir(root)?.flatten() {
+        let kind = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(_) => {
+                failed += 1;
+                continue;
+            }
+        };
         let name = entry.file_name().to_string_lossy().into_owned();
         if !name.starts_with("previous-")
             || !name[9..].bytes().all(|b| b.is_ascii_digit() || b == b'-')
-            || !entry.file_type()?.is_dir()
-            || entry.file_type()?.is_symlink()
+            || !kind.is_dir()
+            || kind.is_symlink()
         {
             continue;
         }
@@ -51,12 +69,16 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
             .as_deref()
             == Some(env!("CARGO_PKG_NAME"))
         {
-            archives.push(entry.path());
+            let modified = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            archives.push((modified, entry.path()));
         }
     }
     archives.sort();
     archives.reverse();
-    for archive in archives.into_iter().skip(keep.max(1) as usize) {
+    for (_, archive) in archives.into_iter().skip(keep.max(1) as usize) {
         let app = format!("{}.exe", env!("CARGO_PKG_NAME"));
         let held = format!("in-use-{}", app);
         let allowed = [
@@ -69,7 +91,15 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
             "register-file-types.ps1",
             ".release-backup",
         ];
-        let entries: Vec<_> = std::fs::read_dir(&archive)?.collect::<Result<_, _>>()?;
+        let entries: Vec<_> = match std::fs::read_dir(&archive)
+            .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+        {
+            Ok(entries) => entries,
+            Err(_) => {
+                failed += 1;
+                continue;
+            }
+        };
         if entries.iter().any(|e| {
             !allowed.contains(&e.file_name().to_string_lossy().as_ref())
                 || !e
@@ -90,9 +120,14 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
             }
         }
         if all {
-            std::fs::remove_file(archive.join(".release-backup"))?;
-            std::fs::remove_dir(archive)?;
-            removed += 1;
+            if std::fs::remove_file(archive.join(".release-backup"))
+                .and_then(|_| std::fs::remove_dir(&archive))
+                .is_ok()
+            {
+                removed += 1;
+            } else {
+                failed += 1;
+            }
         }
     }
     Ok((removed, failed))

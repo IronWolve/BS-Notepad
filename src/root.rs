@@ -59,6 +59,7 @@ mod tests {
 }
 
 /// Test hooks require a private build and an explicit token in its disposable data root.
+#[cfg(feature = "smoke")]
 pub fn smoke_authorized(root: &std::path::Path) -> bool {
     #[cfg(feature = "smoke")]
     {

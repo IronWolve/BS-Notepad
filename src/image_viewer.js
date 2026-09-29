@@ -20,7 +20,7 @@ app.syncImageControls=()=>{
  const image=!!state.image;
  for(const id of ['b-view','b-find','b-map'])$(id).disabled=image;
  const blocked=image||!!state.readOnly||$('text').dataset.ready==='false';
- $('b-edit').disabled=$('b-save').disabled=$('b-saveas').disabled=$('replace-one').disabled=$('replace-all').disabled=blocked;
+ $('b-edit').disabled=$('b-save').disabled=$('replace-one').disabled=$('replace-all').disabled=blocked;$('b-saveas').disabled=image||$('text').dataset.ready==='false'||!!state.readOnly&&!state.writeProtected;
  $('minimap').hidden=image||!state.settings.minimap;
  $('cursor-status').disabled=image;
  if(!image)$('cursor-status').title='Go to line ('+shortcutLabel('Ctrl+G')+')';

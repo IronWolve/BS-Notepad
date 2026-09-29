@@ -8,7 +8,7 @@ pub struct Entry {
     pub path: String,
     pub dir: bool,
     pub openable: bool,
-    pub modified: Option<u64>,
+    pub modified: Option<i64>,
 }
 
 const TEXTUAL: &[&str] = &[
@@ -50,7 +50,11 @@ pub fn list_with_options(
         }
         let kind = item.file_type()?;
         let metadata = if dates || sort_date || kind.is_symlink() || cfg!(target_os = "windows") {
-            std::fs::metadata(&path).ok()
+            if kind.is_symlink() {
+                std::fs::metadata(&path).ok()
+            } else {
+                item.metadata().ok()
+            }
         } else {
             None
         };
@@ -68,10 +72,12 @@ pub fn list_with_options(
             kind.is_dir() || kind.is_symlink() && metadata.as_ref().is_some_and(|m| m.is_dir());
         let regular =
             kind.is_file() || kind.is_symlink() && metadata.as_ref().is_some_and(|m| m.is_file());
-        let modified = metadata
-            .and_then(|m| m.modified().ok())
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|time| time.as_millis().min(u64::MAX as u128) as u64);
+        let modified = metadata.and_then(|m| m.modified().ok()).map(|time| {
+            match time.duration_since(std::time::UNIX_EPOCH) {
+                Ok(time) => time.as_millis().min(i64::MAX as u128) as i64,
+                Err(time) => -(time.duration().as_millis().min(i64::MAX as u128) as i64),
+            }
+        });
         entries.push(Entry {
             name,
             path: path.to_string_lossy().into_owned(),
@@ -87,7 +93,7 @@ pub fn list_with_options(
         (
             !entry.dir,
             std::cmp::Reverse(if sort_date {
-                entry.modified.unwrap_or(0)
+                entry.modified.unwrap_or(i64::MIN)
             } else {
                 0
             }),

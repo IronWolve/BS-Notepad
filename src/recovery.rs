@@ -50,30 +50,89 @@ pub fn write(root: &Path, key: &str, draft: Option<&Draft>) -> std::io::Result<(
         }
     }
 }
-pub fn read(root: &Path) -> Vec<(String, Draft)> {
-    let mut drafts = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(root.join("recovery")) {
-        for entry in entries.flatten().take(100) {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("json") {
-                continue;
+#[derive(Default)]
+pub struct Scan {
+    pub drafts: Vec<(String, Draft)>,
+    pub skipped: usize,
+}
+
+pub fn scan(root: &Path) -> Scan {
+    let mut result = Scan::default();
+    let entries = match std::fs::read_dir(root.join("recovery")) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return result,
+        Err(error) => {
+            crate::log::line(&format!("Recovery folder could not be read: {error}"));
+            result.skipped = 1;
+            return result;
+        }
+    };
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else {
+            result.skipped += 1;
+            continue;
+        };
+        let path = entry.path();
+        let key = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        if path.extension().is_none_or(|extension| extension != "json")
+            || key.is_empty()
+            || !key.bytes().all(|b| b.is_ascii_digit() || b == b'-')
+        {
+            continue;
+        }
+        if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
+            result.skipped += 1;
+            continue;
+        }
+        match entry.metadata() {
+            Ok(meta) if meta.len() <= (crate::storage::MAX_EDIT_BYTES as u64 * 12 + 65536) => {
+                candidates.push((meta.modified().unwrap_or(std::time::UNIX_EPOCH), path))
             }
-            if entry
-                .metadata()
-                .map(|m| m.len() > 128 * 1024 * 1024)
-                .unwrap_or(true)
-            {
-                continue;
-            }
-            if let Ok(bytes) = std::fs::read(&path) {
-                if let Ok(draft) = serde_json::from_slice(&bytes) {
-                    drafts.push((
-                        path.file_stem().unwrap().to_string_lossy().into_owned(),
-                        draft,
-                    ));
-                }
-            }
+            _ => result.skipped += 1,
         }
     }
-    drafts
+    candidates.sort();
+    let mut held = 0;
+    for (_, path) in candidates {
+        if result.drafts.len() >= 1000 || held >= 128 * 1024 * 1024 {
+            result.skipped += 1;
+            continue;
+        }
+        let draft = std::fs::File::open(&path).ok().and_then(|file| {
+            serde_json::from_reader::<_, Draft>(std::io::BufReader::new(file)).ok()
+        });
+        let Some(draft) = draft else {
+            result.skipped += 1;
+            continue;
+        };
+        if !["UTF-8", "UTF-8 BOM", "UTF-16 LE", "UTF-16 BE"]
+            .contains(&draft.format.encoding.as_str())
+            || !["LF", "CRLF", "CR"].contains(&draft.format.ending.as_str())
+        {
+            result.skipped += 1;
+            continue;
+        }
+        let bytes = draft.source.len() + draft.saved_source.len();
+        if draft.source.len() > crate::storage::MAX_EDIT_BYTES
+            || draft.saved_source.len() > crate::storage::MAX_EDIT_BYTES
+            || held + bytes > 128 * 1024 * 1024
+        {
+            result.skipped += 1;
+            continue;
+        }
+        held += bytes;
+        result.drafts.push((
+            path.file_stem().unwrap().to_string_lossy().into_owned(),
+            draft,
+        ));
+    }
+    result
+}
+#[cfg(any(test, feature = "smoke"))]
+pub fn read(root: &Path) -> Vec<(String, Draft)> {
+    scan(root).drafts
 }

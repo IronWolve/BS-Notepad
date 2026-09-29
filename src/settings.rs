@@ -226,6 +226,26 @@ impl Settings {
         let defaults = serde_json::to_value(Self::default())?;
         let defaults = defaults.as_object().unwrap();
         let mut invalid = Vec::new();
+        for key in [
+            "saved_tabs",
+            "recents",
+            "expanded_folders",
+            "theme_favorites",
+        ] {
+            if let Some(values) = input.get_mut(key).and_then(|v| v.as_array_mut()) {
+                let before = values.len();
+                values.retain(|value| {
+                    if key == "saved_tabs" {
+                        serde_json::from_value::<SessionTab>(value.clone()).is_ok()
+                    } else {
+                        value.is_string()
+                    }
+                });
+                if values.len() != before {
+                    invalid.push(format!("{key} (invalid entries)"));
+                }
+            }
+        }
         for (key, value) in input.clone() {
             if !defaults.contains_key(&key) {
                 continue;
@@ -339,8 +359,34 @@ impl Settings {
         self.window_height = self.window_height.clamp(400, 4320);
         self.log_retention_days = self.log_retention_days.clamp(1, 365);
         self.backup_retention = self.backup_retention.clamp(1, 20);
-        self.expanded_folders
-            .retain(|path| !path.is_empty() && path.len() <= 131072);
+        let valid_path =
+            |path: &str| !path.is_empty() && path.len() <= 131072 && !path.contains('\0');
+        self.recents.retain(|path| valid_path(path));
+        let mut recent_seen = std::collections::HashSet::new();
+        self.recents
+            .retain(|path| recent_seen.insert(crate::paths::display_form(Path::new(path))));
+        self.recents.truncate(RECENT_MAX);
+        let mut tab_seen = std::collections::HashSet::new();
+        self.saved_tabs.retain(|tab| {
+            valid_path(&tab.path)
+                && tab_seen.insert(crate::paths::display_form(Path::new(&tab.path)))
+        });
+        self.expanded_folders.retain(|path| valid_path(path));
+        for path in [&mut self.last_path, &mut self.workspace] {
+            if !path.is_empty() && !valid_path(path) {
+                path.clear();
+            }
+        }
+        self.tree_filter = self
+            .tree_filter
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(1024)
+            .collect();
+        for font in [&mut self.ui_font, &mut self.body_font, &mut self.code_font] {
+            *font = font.chars().filter(|c| !c.is_control()).take(256).collect();
+        }
+
         self.expanded_folders.sort();
         self.expanded_folders.dedup();
         self.tree_scroll = if self.tree_scroll.is_finite() {
@@ -358,6 +404,8 @@ impl Settings {
             self.icon_style = "soft".into();
         }
         for tab in &mut self.saved_tabs {
+            tab.selection_start = tab.selection_start.min(64 * 1024 * 1024);
+            tab.selection_end = tab.selection_end.min(64 * 1024 * 1024);
             tab.scroll = if tab.scroll.is_finite() {
                 tab.scroll.clamp(0.0, 1.0)
             } else {
@@ -428,22 +476,36 @@ impl Settings {
 
     /// Written through a temporary file so an interrupted save cannot leave a
     /// truncated settings file behind.
-    pub fn save(&self, root: &Path) -> std::io::Result<()> {
+    pub fn save(&self, root: &Path) -> std::io::Result<Option<String>> {
         if self.blocked_write {
-            return Err(std::io::Error::other(
-                "Settings file could not be preserved; check folder permissions.",
-            ));
+            return Err(std::io::Error::other(if self.load_warning.is_empty() {
+                "Preferences are read-only; check the app folder.".to_owned()
+            } else {
+                self.load_warning.clone()
+            }));
         }
         let target = Self::file(root);
+        let bytes = serde_json::to_vec_pretty(self)?;
+        let mut warning = None;
         if let Ok(previous) = std::fs::read(&target) {
-            if serde_json::from_slice::<Self>(&previous).is_ok() {
-                crate::storage::write_private_atomic(
-                    &target.with_extension("json.bak"),
-                    &previous,
-                )?;
+            if previous == bytes {
+                return Ok(None);
+            }
+            if std::str::from_utf8(&previous)
+                .ok()
+                .is_some_and(|raw| Self::decode(raw).is_ok())
+            {
+                let backup = target.with_extension("json.bak");
+                if let Err(error) = crate::storage::write_private_atomic(&backup, &previous) {
+                    warning = Some(format!(
+                        "Preferences saved, but the backup could not be updated ({}): {error}",
+                        backup.display()
+                    ));
+                }
             }
         }
-        crate::storage::write_private_atomic(&target, &serde_json::to_vec_pretty(self)?)
+        crate::storage::write_private_atomic(&target, &bytes)?;
+        Ok(warning)
     }
 
     pub fn remember(&mut self, path: &Path) {

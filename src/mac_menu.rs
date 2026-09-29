@@ -79,6 +79,9 @@ pub fn create(proxy: EventLoopProxy<UserEvent>) -> Result<Menu, muda::Error> {
             Code::KeyF,
         )),
     );
+    let next = item("findNext", "Find Next", Code::KeyG, false);
+    let previous = item("findPrevious", "Find Previous", Code::KeyG, true);
+    let line = item("line", "Go to Line…", Code::KeyL, false);
     let edit = Submenu::with_items(
         "Edit",
         true,
@@ -92,13 +95,32 @@ pub fn create(proxy: EventLoopProxy<UserEvent>) -> Result<Menu, muda::Error> {
             &Native::select_all(None),
             &Native::separator(),
             &find,
+            &next,
+            &previous,
             &replace,
+            &line,
+        ],
+    )?;
+    let view = Submenu::with_items(
+        "View",
+        true,
+        &[
+            &item("edit", "Edit / Preview", Code::KeyE, false),
+            &item("source", "Source / Rendered", Code::KeyU, false),
+            &item("files", "Show / Hide Files", Code::KeyB, false),
+            &Native::separator(),
+            &item("zoomIn", "Zoom In", Code::Equal, false),
+            &item("zoomOut", "Zoom Out", Code::Minus, false),
+            &item("zoomReset", "Actual Size", Code::Digit0, false),
         ],
     )?;
     let window = Submenu::with_items(
         "Window",
         true,
-        &[&Native::minimize(None), &Native::fullscreen(None)],
+        &[
+            &item("minimize", "Minimize", Code::KeyM, false),
+            &Native::fullscreen(None),
+        ],
     )?;
     let help = Submenu::with_items(
         "Help",
@@ -110,7 +132,7 @@ pub fn create(proxy: EventLoopProxy<UserEvent>) -> Result<Menu, muda::Error> {
             None,
         )],
     )?;
-    let menu = Menu::with_items(&[&app, &file, &edit, &window, &help])?;
+    let menu = Menu::with_items(&[&app, &file, &edit, &view, &window, &help])?;
     menu.init_for_nsapp();
     window.set_as_windows_menu_for_nsapp();
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
@@ -119,20 +141,21 @@ pub fn create(proxy: EventLoopProxy<UserEvent>) -> Result<Menu, muda::Error> {
     Ok(menu)
 }
 
-pub fn document_controls(menu: &Menu, image: bool, editable: bool) {
-    fn visit(items: Vec<muda::MenuItemKind>, image: bool, editable: bool) {
+pub fn document_controls(menu: &Menu, image: bool, editable: bool, copyable: bool) {
+    fn visit(items: Vec<muda::MenuItemKind>, image: bool, editable: bool, copyable: bool) {
         for item in items {
             if let Some(submenu) = item.as_submenu() {
-                visit(submenu.items(), image, editable);
+                visit(submenu.items(), image, editable, copyable);
             }
             if let Some(command) = item.as_menuitem() {
                 match command.id().0.as_str() {
-                    "save" | "saveAs" | "replace" => command.set_enabled(editable),
-                    "find" => command.set_enabled(!image),
+                    "save" | "replace" | "edit" | "line" => command.set_enabled(editable),
+                    "saveAs" => command.set_enabled(copyable),
+                    "find" | "findNext" | "findPrevious" | "source" => command.set_enabled(!image),
                     _ => {}
                 }
             }
         }
     }
-    visit(menu.items(), image, editable);
+    visit(menu.items(), image, editable, copyable);
 }

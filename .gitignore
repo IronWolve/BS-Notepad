@@ -24,6 +24,7 @@
 !/src/disk.rs
 !/src/documents.rs
 !/src/find.js
+!/src/file_metadata.rs
 !/src/fonts.rs
 !/src/formatting.rs
 !/src/icon.rs
@@ -40,6 +41,7 @@
 !/src/render.rs
 !/src/root.rs
 !/src/settings.rs
+!/src/saving.rs
 !/src/storage.rs
 !/src/theme.rs
 !/src/tray.rs
@@ -131,9 +133,6 @@ __pycache__/
 docs/
 AGENTS.md
 agent.md
-CLAUDE.md
-.agents/
-.codex/
 .idea/
 .vscode/
 .DS_Store

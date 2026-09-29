@@ -6,6 +6,7 @@ mod assets;
 mod dialogs;
 mod disk;
 mod documents;
+mod file_metadata;
 mod fonts;
 mod formatting;
 mod icon;
@@ -20,6 +21,7 @@ mod preferences;
 mod recovery;
 mod render;
 mod root;
+mod saving;
 mod settings;
 mod storage;
 #[cfg(test)]
@@ -38,7 +40,7 @@ use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Window, WindowBuilder};
 use wry::http::Request;
-use wry::{WebView, WebViewBuilder};
+use wry::{WebContext, WebView, WebViewBuilder};
 
 use documents::{Document, Documents};
 #[cfg(test)]
@@ -63,10 +65,16 @@ enum UserEvent {
     #[cfg(target_os = "macos")]
     MacCommand(String),
     BrowserLoaded,
+    RecoveryFound(recovery::Scan),
+    Saved {
+        task: saving::Task,
+        result: Result<saving::Outcome, String>,
+    },
     FontsLoaded(Vec<fonts::FontFamily>),
     PreferencesSaved {
         serial: u64,
         error: Option<String>,
+        warning: Option<String>,
     },
     Rendered {
         generation: u64,
@@ -102,11 +110,24 @@ enum UserEvent {
     Handoff(Vec<String>),
 }
 
+enum AfterSave {
+    Close(u64),
+    Open {
+        from: u64,
+        path: PathBuf,
+        new_tab: bool,
+        reload: bool,
+        fragment: String,
+    },
+    Quit,
+}
+
 struct App {
     root: PathBuf,
     #[cfg(target_os = "macos")]
     _menu: muda::Menu,
     _instance: Option<instance::Guard>,
+    #[cfg(feature = "smoke")]
     smoke_started: Option<Instant>,
     ui_ready: bool,
     boot_started: Instant,
@@ -118,8 +139,14 @@ struct App {
     view_changed: Option<Instant>,
     preview_theme: Option<String>,
     documents: Documents,
+    editor_sent: std::collections::HashMap<u64, u64>,
     render_worker: jobs::RenderWorker,
     io: jobs::IoWorker,
+    saver: saving::Worker,
+    save_pending: Option<(u64, u64)>,
+    save_serial: u64,
+    after_save: Option<AfterSave>,
+    quit_discarded: std::collections::HashMap<u64, u64>,
     workspace_worker: workspace_files::Worker,
     quick_request: u64,
     file_request: Option<u64>,
@@ -131,6 +158,7 @@ struct App {
     startup_pending: usize,
     startup_target: Option<PathBuf>,
     recovery_checked: bool,
+    recovery_scan: Option<recovery::Scan>,
     recovery_pending: std::collections::HashSet<u64>,
     recovery_flush: Instant,
     recovery_activity: Instant,
@@ -142,6 +170,7 @@ struct App {
     tree_dir: PathBuf,
     window: Window,
     webview: WebView,
+    _web_context: WebContext,
 }
 
 impl std::ops::Deref for App {
@@ -156,23 +185,48 @@ impl std::ops::DerefMut for App {
     }
 }
 
+fn reap(result: std::io::Result<std::process::Child>) -> std::io::Result<()> {
+    let mut child = result?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 fn open_externally(url: &str) {
-    if !url.starts_with("https://") && !url.starts_with("http://") && !url.starts_with("mailto:") {
+    let Some(url) = assets::external(url) else {
         return;
-    }
-    // Deliberately not navigating the window: an external link belongs in the
-    // browser, and the document view should never leave the document.
-    let result = if cfg!(target_os = "windows") {
-        std::process::Command::new("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", url])
-            .spawn()
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(url).spawn()
-    } else {
-        std::process::Command::new("xdg-open").arg(url).spawn()
     };
-    if let Err(e) = result {
-        log::line(&format!("could not open {}: {}", url, e));
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let verb: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+        let target: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+        // NUL/control characters were rejected before passing literal strings to the shell.
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                verb.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        } as isize;
+        if result <= 32 {
+            log::line(&format!("Could not open link: shell error {result}"));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let command = if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        if let Err(error) = reap(std::process::Command::new(command).arg(&url).spawn()) {
+            log::line(&format!("Could not open link: {error}"));
+        }
     }
 }
 
@@ -236,6 +290,7 @@ impl App {
             "maximized": self.window.is_maximized(),
             "githubUrl": env!("CARGO_PKG_HOMEPAGE"),
             "version": env!("CARGO_PKG_VERSION"),
+            "build": concat!("APP_BUILD|",env!("CARGO_PKG_NAME"),"|",env!("CARGO_PKG_VERSION"),"|",env!("APP_BUILD_TARGET"),"|",env!("APP_SOURCE_FINGERPRINT"),"|",env!("APP_SOURCE_REVISION"),"|END"),
             "trayAvailable": self.tray.available(),
             "settings": self.settings,
             "defaults": Settings::defaults_json(),
@@ -325,6 +380,65 @@ impl App {
             self.journal(id);
         }
         self.recovery_flush = Instant::now();
+    }
+
+    fn offer_recovery(&mut self, scan: recovery::Scan) -> bool {
+        let changed = !scan.drafts.is_empty();
+        if !self.recovery_checked {
+            self.recovery_checked = true;
+            let drafts = scan.drafts;
+            if !drafts.is_empty() {
+                let choice = recovery::choice(
+                    crate::dialogs::MessageDialog::new()
+                        .set_title("Recover notes")
+                        .set_description(format!(
+                            "{} unsaved note(s) were found. Restore them?",
+                            drafts.len()
+                        ))
+                        .set_buttons(crate::dialogs::MessageButtons::YesNoCancelCustom(
+                            "Restore".into(),
+                            "Discard".into(),
+                            "Later".into(),
+                        ))
+                        .show(),
+                );
+                for (key, draft) in drafts {
+                    if choice == recovery::Choice::Restore {
+                        let mut doc = Document::new(draft.path, draft.source);
+                        doc.saved_source = draft.saved_source;
+                        doc.format = draft.format;
+                        doc.fingerprint = draft.fingerprint;
+                        doc.dirty = true;
+                        doc.editing = true;
+                        doc.recovery_key = key;
+                        if let Some(id) = doc
+                            .path
+                            .as_deref()
+                            .and_then(|p| self.documents.find_path(p))
+                        {
+                            self.documents.activate(id);
+                            self.documents.replace(doc);
+                        } else {
+                            self.documents.insert(doc);
+                        }
+                    } else if choice == recovery::Choice::Discard {
+                        let _ = recovery::write(&self.root, &key, None);
+                    }
+                }
+                if choice == recovery::Choice::Restore
+                    && self.documents.tabs.len() > 1
+                    && self.documents.tabs[0].path.is_none()
+                    && !self.documents.tabs[0].dirty
+                {
+                    let welcome_id = self.documents.tabs[0].id;
+                    self.documents.remove(welcome_id);
+                }
+            }
+        }
+        if scan.skipped > 0 {
+            self.notify(&format!("{} recovery item(s) could not be loaded. They have been kept in the recovery folder.", scan.skipped));
+        }
+        changed
     }
 
     fn notify(&self, message: &str) {
@@ -417,8 +531,8 @@ impl App {
 
     fn remember_closed(&mut self, mut doc: Document) {
         if doc.path.is_some() && !doc.dirty {
-            doc.source.clear();
-            doc.saved_source.clear();
+            doc.source = String::new();
+            doc.saved_source = String::new();
         }
         self.closed_tabs.push(doc);
         while self.closed_tabs.len() > 15
@@ -450,29 +564,31 @@ impl App {
         if closing.dirty {
             self.activate_tab(id);
             if !self.may_close() {
+                if self.save_pending.is_some() {
+                    self.after_save = Some(AfterSave::Close(id));
+                }
                 self.activate_tab(original);
                 return false;
             }
         }
-        let closing = self
-            .documents
-            .tabs
-            .iter()
-            .find(|d| d.id == id)
-            .unwrap()
-            .clone();
+        let rerender = id == original || self.id != original;
+        let closing = self.documents.take(id).unwrap();
         self.io.send(jobs::IoTask::Recovery {
             root: self.root.clone(),
             key: closing.recovery_key.clone(),
             document: None,
         });
         self.recovery_pending.remove(&id);
+        self.editor_sent.remove(&id);
         self.remember_closed(closing);
-        self.documents.remove(id);
         if id != original {
             self.documents.activate(original);
         }
-        self.activate_tab(self.id);
+        if rerender {
+            self.activate_tab(self.id);
+        } else {
+            self.send_tabs();
+        }
         self.persist_settings();
         true
     }
@@ -488,6 +604,11 @@ impl App {
     }
 
     fn quit(&mut self, control_flow: &mut ControlFlow) {
+        if self.save_pending.is_some() {
+            self.after_save = Some(AfterSave::Quit);
+            self.notify("Finishing the save before quitting…");
+            return;
+        }
         if self.file_request.is_some() {
             self.notify("A file operation is still finishing. Please try Quit again afterward.");
             return;
@@ -497,14 +618,22 @@ impl App {
             .documents
             .tabs
             .iter()
-            .filter(|d| d.dirty)
+            .filter(|d| d.dirty && self.quit_discarded.get(&d.id) != Some(&d.edit_revision))
             .map(|d| d.id)
             .collect();
         for id in dirty {
             self.show();
             self.activate_tab(id);
             if !self.may_close() {
+                if self.save_pending.is_some() {
+                    self.after_save = Some(AfterSave::Quit);
+                } else {
+                    self.quit_discarded.clear();
+                }
                 return;
+            }
+            if self.dirty {
+                self.quit_discarded.insert(id, self.edit_revision);
             }
         }
         self.activate_tab(original);
@@ -540,7 +669,12 @@ impl App {
 
     fn render_current(&mut self, scroll: f32) {
         #[cfg(target_os = "macos")]
-        mac_menu::document_controls(&self._menu, self.image.is_some(), !self.read_only);
+        mac_menu::document_controls(
+            &self._menu,
+            self.image.is_some(),
+            !self.read_only,
+            !self.read_only || self.write_protected,
+        );
         let t = self.theme();
         if self.image.is_some() || self.unloaded {
             self.generation = self.render_worker.cancel();
@@ -569,19 +703,19 @@ impl App {
             "dirty": self.dirty,
             "imageView": self.image_view,
             "image":self.image.as_ref().and_then(|image|self.path.as_ref().map(|path|json!({"format":image.format,"bytes":image.bytes,"url":format!("{}?image={}-{}",assets::url_for(&path.to_string_lossy(),None),self.id,self.seen_mtime.and_then(|time|time.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_nanos()).unwrap_or(0))}))),
-            "encoding": self.format.encoding, "lineEnding":self.format.label(), "readOnly":self.read_only, "externalChanged":self.external_changed,
+            "encoding": self.format.encoding, "lineEnding":self.format.label(), "readOnly":self.read_only, "writeProtected":self.write_protected, "externalChanged":self.external_changed,
             "generation":self.generation,
             "name": name,
             "path": self.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
             "scroll": scroll,
         });
         self.run_js(format!("window.app.beginDocument({});", payload));
-        self.run_js(format!(
-            "window.app.setEditorText({});",
-            json!({
-                "tab":self.id,"revision":self.edit_revision,"text":self.source
-            })
-        ));
+        let mut editor_payload = json!({"tab":self.id,"revision":self.edit_revision});
+        if self.editor_sent.get(&self.id) != Some(&self.edit_revision) {
+            editor_payload["text"] = json!(self.source);
+            self.editor_sent.insert(self.id, self.edit_revision);
+        }
+        self.run_js(format!("window.app.setEditorText({});", editor_payload));
 
         if self.unloaded {
             let message = if self.loading {
@@ -610,6 +744,15 @@ impl App {
     }
     fn open_file(&mut self, path: PathBuf, new_tab: bool, reload: bool, fragment: String) {
         if reload && !self.may_close() {
+            if self.save_pending.is_some() {
+                self.after_save = Some(AfterSave::Open {
+                    from: self.id,
+                    path,
+                    new_tab,
+                    reload,
+                    fragment,
+                });
+            }
             return;
         }
         self.io.send(jobs::IoTask::Open(jobs::OpenTask {
@@ -640,6 +783,7 @@ impl App {
             document.editing &= !document.read_only;
             document.id = existing.id;
             *existing = document;
+            self.editor_sent.remove(&task.from);
             if self.id == task.from {
                 assets::set_scope(self.path.as_deref().and_then(Path::parent));
                 self.render_current(self.scroll);
@@ -664,6 +808,15 @@ impl App {
             && self.edit_revision == task.revision
             && !self.may_close()
         {
+            if self.save_pending.is_some() {
+                self.after_save = Some(AfterSave::Open {
+                    from: task.from,
+                    path: task.path,
+                    new_tab: task.new_tab,
+                    reload: task.reload,
+                    fragment: task.fragment,
+                });
+            }
             return;
         }
         if self.path.as_ref() == Some(&task.path)
@@ -696,16 +849,17 @@ impl App {
         if task.new_tab || self.id != task.from || self.edit_revision != task.revision {
             self.documents.insert(document);
         } else {
-            let old = self.documents.current().clone();
-            if !task.reload {
-                self.remember_closed(old.clone());
-            }
+            let old = self.documents.replace(document);
             self.io.send(jobs::IoTask::Recovery {
                 root: self.root.clone(),
-                key: old.recovery_key,
+                key: old.recovery_key.clone(),
                 document: None,
             });
-            self.documents.replace(document);
+            self.editor_sent.remove(&old.id);
+            self.recovery_pending.remove(&old.id);
+            if !task.reload {
+                self.remember_closed(old);
+            }
         }
         assets::set_scope(task.path.parent());
         if !task.restore || self.startup_target.is_none() {
@@ -715,7 +869,7 @@ impl App {
         self.render_current(self.scroll);
         self.send_recents();
         self.persist_settings();
-        if !task.reload && !task.restore && !task.path.starts_with(&self.tree_dir) {
+        if !task.reload && !task.restore && self.tree_dir.as_os_str().is_empty() {
             if let Some(parent) = task.path.parent() {
                 self.send_tree(parent.into());
             }
@@ -820,11 +974,15 @@ impl App {
     }
 
     fn save(&mut self, text: String, save_as: bool) -> bool {
+        if self.save_pending.is_some() {
+            self.notify("A save is already finishing. Your newer edits remain open.");
+            return false;
+        }
         if self.file_request.is_some() {
             self.notify("A file operation is still finishing. Please try Save again afterward.");
             return false;
         }
-        if self.read_only {
+        if self.read_only && !(save_as && self.write_protected) {
             self.notify(if self.image.is_some() {
                 "Images are view-only and cannot be overwritten by the text editor."
             } else {
@@ -832,7 +990,9 @@ impl App {
             });
             return false;
         }
-        if !self.documents.current().accepts_save(&text) {
+        if !(self.documents.current().accepts_save(&text)
+            || save_as && self.write_protected && text == self.source)
+        {
             self.notify("Save refused: the editor is still synchronizing. Your file was not changed; try Save again when loading finishes.");
             return false;
         }
@@ -863,94 +1023,164 @@ impl App {
             }
         };
 
-        let path = paths::normalize(&path);
-        if let Some(id) = self.documents.find_path(&path) {
-            if id != self.id {
-                self.notify("That file is already open in another tab. Save from that tab, or choose another filename.");
-                return false;
-            }
+        self.save_serial += 1;
+        let token = self.save_serial;
+        let tab = self.id;
+        let task = saving::Task {
+            token,
+            tab,
+            path,
+            original: self.path.clone(),
+            source: text,
+            other_paths: self
+                .documents
+                .tabs
+                .iter()
+                .filter(|doc| doc.id != tab)
+                .filter_map(|doc| doc.path.clone())
+                .collect(),
+            unchanged: self.source == self.saved_source,
+            format: self.format.clone(),
+            baseline: self.fingerprint,
+            approved_disk: None,
+            approved_endings: false,
+        };
+        if self.saver.submit(task).is_err() {
+            self.notify("Save is unavailable. Your edits are still open.");
+            return false;
         }
-        // If the file moved underneath us, say so rather than overwriting.
-        let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        if self.path.as_ref() == Some(&path)
-            && self.fingerprint.is_some()
-            && (current != self.seen_mtime
-                || self
-                    .fingerprint
-                    .is_some_and(|hash| storage::disk_fingerprint(&path).ok() != Some(hash)))
-        {
-            let choice = crate::dialogs::MessageDialog::new()
-                .set_title("Changed on disk")
-                .set_description("This file changed on disk since it was opened.\n\nOverwrite it?")
-                .set_buttons(crate::dialogs::MessageButtons::YesNo)
-                .show();
-            if choice != crate::dialogs::MessageDialogResult::Yes {
-                self.run_js("window.app.note('save cancelled - file changed on disk');".into());
-                return false;
-            }
-        }
+        self.save_pending = Some((token, tab));
+        self.run_js(format!(
+            "window.app.saveStatus({});",
+            json!({"tab":tab,"busy":true})
+        ));
+        self.notify("Saving…");
+        false
+    }
 
-        let new_path = self.path.as_ref() != Some(&path);
-        if !new_path
-            && text == self.saved_source
-            && self.fingerprint.is_some()
-            && storage::disk_fingerprint(&path).ok() == self.fingerprint
-        {
-            if self.source != text {
-                self.edit_revision += 1;
-                self.source = text;
-            }
-            self.dirty = false;
-            self.journal(self.id);
-            self.render_current(self.scroll);
-            self.notify("Saved; file content is unchanged.");
-            return true;
+    fn finish_save(
+        &mut self,
+        mut task: saving::Task,
+        result: Result<saving::Outcome, String>,
+        control_flow: &mut ControlFlow,
+    ) {
+        if self.save_pending != Some((task.token, task.tab)) {
+            return;
         }
-        if self.format.mixed {
-            let choice = crate::dialogs::MessageDialog::new().set_title("Mixed line endings")
-                .set_description(format!("This file contains different line endings. Saving these changes will standardize them to {}. Continue?", self.format.ending))
-                .set_buttons(crate::dialogs::MessageButtons::YesNoCancel).show();
-            if choice != crate::dialogs::MessageDialogResult::Yes {
-                self.notify("Save cancelled; original line endings preserved.");
-                return false;
-            }
-        }
-        let bytes = self.format.encode(&text);
-        match storage::write_document(&path, &bytes) {
-            Ok(report) => {
-                self.format.mixed = false;
-                self.fingerprint = Some(storage::fingerprint(&bytes));
-                self.external_changed = false;
-                self.disk.saved();
-                if self.source != text {
-                    self.edit_revision += 1;
+        let mut resubmit = false;
+        let mut success = false;
+        match result {
+            Ok(saving::Outcome::Conflict(observed)) => {
+                self.show();
+                let choice = crate::dialogs::MessageDialog::new()
+                    .set_title("Changed on disk")
+                    .set_description(format!(
+                        "{} changed on disk. Overwrite that version with the edits being saved?",
+                        task.path.display()
+                    ))
+                    .set_buttons(crate::dialogs::MessageButtons::YesNo)
+                    .show();
+                if choice == crate::dialogs::MessageDialogResult::Yes {
+                    task.approved_disk = Some(observed);
+                    resubmit = true;
+                } else {
+                    self.notify("Save cancelled; the file on disk was preserved.");
                 }
-                self.saved_source = text.clone();
-                self.source = text;
-                assets::set_scope(path.parent());
-                self.path = Some(path.clone());
-                self.seen_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-                self.dirty = false;
-                self.journal(self.id);
-                self.settings.remember(&path);
-                self.persist_settings();
-                log::line(&format!("saved {}", path.display()));
-                self.render_current(self.scroll);
+            }
+            Ok(saving::Outcome::MixedEndings) => {
+                self.show();
+                let choice = crate::dialogs::MessageDialog::new()
+                    .set_title("Mixed line endings")
+                    .set_description(format!(
+                        "Saving {} will standardize its line endings to {}. Continue?",
+                        task.path.display(),
+                        task.format.ending
+                    ))
+                    .set_buttons(crate::dialogs::MessageButtons::YesNoCancel)
+                    .show();
+                if choice == crate::dialogs::MessageDialogResult::Yes {
+                    task.approved_endings = true;
+                    resubmit = true;
+                } else {
+                    self.notify("Save cancelled; original line endings preserved.");
+                }
+            }
+            Ok(saving::Outcome::Written {
+                fingerprint,
+                modified,
+                mixed,
+                warning,
+            }) => {
+                if let Some(doc) = self.documents.get_mut(task.tab) {
+                    if doc.path.as_ref() != Some(&task.path) {
+                        doc.write_protected = false;
+                        doc.read_only = false;
+                    }
+                    doc.path = Some(task.path.clone());
+                    doc.saved_source = std::mem::take(&mut task.source);
+                    doc.fingerprint = Some(fingerprint);
+                    doc.seen_mtime = modified;
+                    doc.format.mixed = mixed;
+                    doc.dirty = doc.source != doc.saved_source;
+                    doc.external_changed = false;
+                    doc.disk.saved();
+                }
+                self.journal(task.tab);
+                self.settings.remember(&task.path);
                 self.send_recents();
-                if new_path {
+                self.persist_settings();
+                self.send_tabs();
+                self.send_dirty(task.tab);
+                if self.id == task.tab {
+                    assets::set_scope(task.path.parent());
+                    self.render_current(self.scroll);
+                }
+                if task.original.as_ref() != Some(&task.path) {
                     self.send_tree(self.tree_dir.clone());
                 }
-                self.notify(report.warning.as_deref().unwrap_or("Saved"));
-                true
+                log::line(&format!("Saved {}", task.path.display()));
+                self.notify(warning.as_deref().unwrap_or("Saved"));
+                success = true;
             }
-            Err(e) => {
-                log::line(&format!("save failed {}: {}", path.display(), e));
-                self.run_js(format!(
-                    "window.app.note({});",
-                    serde_json::to_string(&format!("save failed: {}", e)).unwrap_or_default()
-                ));
-                false
+            Err(error) => {
+                log::line(&format!("Save failed {}: {error}", task.path.display()));
+                self.notify(&format!("Save failed: {error}"));
             }
+        }
+        if resubmit {
+            if self.saver.submit(task).is_ok() {
+                return;
+            }
+            self.notify("Save is unavailable. Your edits are still open.");
+        }
+        let (_, tab) = self.save_pending.take().unwrap();
+        self.run_js(format!(
+            "window.app.saveStatus({});",
+            json!({"tab":tab,"busy":false})
+        ));
+        let action = self.after_save.take();
+        if !success {
+            self.quit_discarded.clear();
+            return;
+        }
+        match action {
+            Some(AfterSave::Close(id)) => {
+                self.close_tab(id);
+            }
+            Some(AfterSave::Open {
+                from,
+                path,
+                new_tab,
+                reload,
+                fragment,
+            }) => self.open_file(
+                path,
+                new_tab || self.id != from,
+                reload && self.id == from,
+                fragment,
+            ),
+            Some(AfterSave::Quit) => self.quit(control_flow),
+            None => {}
         }
     }
 
@@ -1013,16 +1243,16 @@ impl App {
                         doc.editing = v && !doc.read_only;
                     }
                     if let Some(v) = view.get("scroll").and_then(|v| v.as_f64()) {
-                        doc.scroll = v as f32;
+                        doc.scroll = (v as f32).clamp(0.0, 1.0);
                     }
                     if let Some(v) = view.get("editorScroll").and_then(|v| v.as_f64()) {
-                        doc.editor_scroll = v;
+                        doc.editor_scroll = v.clamp(0.0, 100_000_000.0);
                     }
                     if let Some(v) = view.get("selectionStart").and_then(|v| v.as_u64()) {
-                        doc.selection_start = v;
+                        doc.selection_start = v.min(64 * 1024 * 1024);
                     }
                     if let Some(v) = view.get("selectionEnd").and_then(|v| v.as_u64()) {
-                        doc.selection_end = v;
+                        doc.selection_end = v.min(64 * 1024 * 1024);
                     }
                     if doc.image.is_some() {
                         if let Some(view) = view.get("imageView").and_then(|v| {
@@ -1039,6 +1269,7 @@ impl App {
         match command {
             "ready" => {
                 if self.ui_ready {
+                    self.editor_sent.clear();
                     self.send_init();
                     self.send_recents();
                     self.send_tree(self.tree_dir.clone());
@@ -1078,56 +1309,8 @@ impl App {
                         self.documents.activate(id);
                     }
                 }
-                if !self.recovery_checked {
-                    self.recovery_checked = true;
-                    let drafts = recovery::read(&self.root);
-                    if !drafts.is_empty() {
-                        let choice = recovery::choice(
-                            crate::dialogs::MessageDialog::new()
-                                .set_title("Recover notes")
-                                .set_description(format!(
-                                    "{} unsaved note(s) were found. Restore them?",
-                                    drafts.len()
-                                ))
-                                .set_buttons(crate::dialogs::MessageButtons::YesNoCancelCustom(
-                                    "Restore".into(),
-                                    "Discard".into(),
-                                    "Later".into(),
-                                ))
-                                .show(),
-                        );
-                        for (key, draft) in drafts {
-                            if choice == recovery::Choice::Restore {
-                                let mut doc = Document::new(draft.path, draft.source);
-                                doc.saved_source = draft.saved_source;
-                                doc.format = draft.format;
-                                doc.fingerprint = draft.fingerprint;
-                                doc.dirty = true;
-                                doc.editing = true;
-                                doc.recovery_key = key;
-                                if let Some(id) = doc
-                                    .path
-                                    .as_deref()
-                                    .and_then(|p| self.documents.find_path(p))
-                                {
-                                    self.documents.activate(id);
-                                    self.documents.replace(doc);
-                                } else {
-                                    self.documents.insert(doc);
-                                }
-                            } else if choice == recovery::Choice::Discard {
-                                let _ = recovery::write(&self.root, &key, None);
-                            }
-                        }
-                        if choice == recovery::Choice::Restore
-                            && self.documents.tabs.len() > 1
-                            && self.documents.tabs[0].path.is_none()
-                            && !self.documents.tabs[0].dirty
-                        {
-                            let welcome_id = self.documents.tabs[0].id;
-                            self.documents.remove(welcome_id);
-                        }
-                    }
+                if let Some(scan) = self.recovery_scan.take() {
+                    self.offer_recovery(scan);
                 }
                 self.activate_tab(self.id);
                 self.persist_settings();
@@ -1162,6 +1345,7 @@ impl App {
                         .unwrap_or("unknown")
                 ));
             }
+            #[cfg(feature = "smoke")]
             "smokeDialog" if self.smoke_started.is_some() => {
                 self.send_tree(self.tree_dir.clone());
                 let result = crate::dialogs::MessageDialog::new()
@@ -1180,9 +1364,11 @@ impl App {
                     json!(format!("{:?}", recovery::choice(result)))
                 ));
             }
+            #[cfg(feature = "smoke")]
             "smokeCreateUnavailable" if self.smoke_started.is_some() => {
                 let _ = std::fs::write(self.root.join("missing-session.md"), "File is back.\n");
             }
+            #[cfg(feature = "smoke")]
             "smokeInspect" if self.smoke_started.is_some() => {
                 self.flush_recovery();
                 self.io.flush();
@@ -1194,6 +1380,7 @@ impl App {
                     .map(|d| d.source);
                 self.run_js(format!("window.app.smokeState={};",json!({"token":value.get("token"),"workspace":self.settings.workspace,"savedTabs":self.settings.saved_tabs,"tabs":self.documents.tabs.iter().map(|doc|json!({"id":doc.id,"unloaded":doc.unloaded})).collect::<Vec<_>>(),"source":self.source,"disk":disk,"dirty":self.dirty,"recovery":recovery::read(&self.root).len()})));
             }
+            #[cfg(feature = "smoke")]
             "smokeReady" if self.smoke_started.is_some() => {
                 self.persist_settings();
                 let preferences_saved = self.preferences.flush();
@@ -1243,7 +1430,9 @@ impl App {
             "new" => self.new_note(),
             "activateTab" => {
                 if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
-                    self.activate_tab(id);
+                    if id != self.id || self.unloaded {
+                        self.activate_tab(id);
+                    }
                 }
             }
             "closeTab" => {
@@ -1275,6 +1464,16 @@ impl App {
                     }
                 }
             }
+            "needEditorText" => {
+                if let Some(id) = value.get("tab").and_then(|v| v.as_u64()) {
+                    if let Some(doc) = self.documents.tabs.iter().find(|doc| doc.id == id) {
+                        self.run_js(format!(
+                            "window.app.setEditorText({});",
+                            json!({"tab":doc.id,"revision":doc.edit_revision,"text":doc.source})
+                        ));
+                    }
+                }
+            }
             "viewState" => {}
             "editPatch" => {
                 let id = value
@@ -1300,6 +1499,7 @@ impl App {
                             {
                                 doc.edit_revision = revision;
                                 doc.dirty = doc.source != doc.saved_source;
+                                self.editor_sent.insert(id, revision);
                                 accepted = true;
                             }
                         }
@@ -1332,6 +1532,7 @@ impl App {
                             }
                             doc.edit(text.to_owned());
                             doc.edit_revision = revision;
+                            self.editor_sent.insert(id, revision);
                         }
                         changed = before != doc.dirty;
                     }
@@ -1381,6 +1582,16 @@ impl App {
                 self.render_current(self.scroll);
             }
             "cleanHistory" => {
+                let message = format!("Delete app-owned logs older than {} days and keep the newest {} verified release backup(s)? Other files are preserved.", self.settings.log_retention_days, self.settings.backup_retention);
+                if crate::dialogs::MessageDialog::new()
+                    .set_title("Clean app history")
+                    .set_description(message)
+                    .set_buttons(crate::dialogs::MessageButtons::YesNo)
+                    .show()
+                    != crate::dialogs::MessageDialogResult::Yes
+                {
+                    return;
+                }
                 match maintenance::cleanup(
                     &self.root,
                     self.settings.log_retention_days,
@@ -1431,6 +1642,10 @@ impl App {
                             doc.path = None;
                         }
                         self.documents.insert(doc);
+                        if self.dirty {
+                            self.recovery_pending.insert(self.id);
+                            self.recovery_activity = Instant::now();
+                        }
                         self.activate_tab(self.id);
                     }
                 }
@@ -1542,7 +1757,10 @@ impl App {
                         .into(),
                     rename: value.get("kind").and_then(|v| v.as_str()) == Some("rename"),
                 };
-                if self.file_request.is_some() || !self.workspace_worker.operate(operation) {
+                if self.save_pending.is_some()
+                    || self.file_request.is_some()
+                    || !self.workspace_worker.operate(operation)
+                {
                     self.run_js(format!("window.app.fileOperation({});",json!({"request":request,"error":"Another file operation is still finishing."})));
                 } else {
                     self.file_request = Some(request);
@@ -1604,7 +1822,9 @@ impl App {
                     } else {
                         folder_text.into_owned()
                     };
-                    if let Err(e) = std::process::Command::new(command).arg(folder_text).spawn() {
+                    if let Err(e) =
+                        reap(std::process::Command::new(command).arg(folder_text).spawn())
+                    {
                         self.notify(&format!("Cannot open folder: {}", e));
                     }
                 }
@@ -1708,6 +1928,9 @@ impl App {
 
     /// Asks before losing edits.
     fn may_close(&mut self) -> bool {
+        if self.save_pending.is_some_and(|(_, tab)| tab == self.id) {
+            return false;
+        }
         if !self.dirty {
             return true;
         }
@@ -1763,9 +1986,24 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     let root = root::app_root()?;
+    #[cfg(target_os = "linux")]
+    {
+        // Set before creating threads or initializing toolkit/browser libraries.
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", root.join(".data"));
+            std::env::set_var("XDG_CONFIG_HOME", root.join(".config"));
+            std::env::set_var("XDG_CACHE_HOME", root.join(".cache"));
+        }
+    }
     if let Err(error) = std::fs::create_dir_all(&root) {
         eprintln!("Application data folder unavailable: {error}");
     }
+    let probe = root.join(format!(".write-check-{}", recovery::key()));
+    let writable = file_metadata::create_temp(&probe, None).map(drop);
+    if let Err(error) = writable {
+        return Err(format!("The application folder is not writable: {}. Move the complete app to a writable folder, then open it again. {error}", root.display()).into());
+    }
+    std::fs::remove_file(&probe)?;
     log::init(&root);
     let prior_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -1820,7 +2058,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let _ = font_proxy.send_event(UserEvent::FontsLoaded(fonts::families()));
     });
     let render_worker = jobs::RenderWorker::new(proxy.clone());
+    let recovery_proxy = proxy.clone();
+    let recovery_root = root.clone();
+    std::thread::spawn(move || {
+        let _ = recovery_proxy.send_event(UserEvent::RecoveryFound(recovery::scan(&recovery_root)));
+    });
     let io = jobs::IoWorker::new(proxy.clone());
+    let saver = saving::Worker::new(proxy.clone());
     let workspace_worker = workspace_files::Worker::new(proxy.clone());
     let preferences = preferences::Writer::new(root.clone(), proxy.clone());
 
@@ -1885,7 +2129,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let navigation_ready = std::rc::Rc::new(std::cell::Cell::new(false));
     let navigation_gate = navigation_ready.clone();
     let page_proxy = proxy.clone();
-    let builder = WebViewBuilder::new()
+    let mut web_context = WebContext::new(Some(root.join("webview")));
+    let builder = WebViewBuilder::new_with_web_context(&mut web_context)
+        .with_incognito(true)
         .with_html(ui::shell())
         .with_hotkeys_zoom(false)
         .with_navigation_handler(move |url| {
@@ -1914,16 +2160,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
         .with_download_started_handler(|_, _| false)
-        .with_drag_drop_handler(move |event| {
-            if let wry::DragDropEvent::Drop { paths, .. } = event {
-                for path in paths {
-                    let _ = drop_proxy.send_event(UserEvent::Dropped(path.clone()));
+        .with_drag_drop_handler({
+            let file_drag = std::cell::Cell::new(false);
+            move |event| match event {
+                wry::DragDropEvent::Enter { paths, .. } => {
+                    file_drag.set(!paths.is_empty());
+                    !paths.is_empty()
                 }
+                wry::DragDropEvent::Drop { paths, .. } => {
+                    file_drag.set(false);
+                    for path in &paths {
+                        let _ = drop_proxy.send_event(UserEvent::Dropped(path.clone()));
+                    }
+                    !paths.is_empty()
+                }
+                wry::DragDropEvent::Over { .. } => file_drag.get(),
+                wry::DragDropEvent::Leave => file_drag.replace(false),
+                _ => false,
             }
-            true
         })
         .with_ipc_handler(move |request: Request<String>| {
-            let _ = ipc_proxy.send_event(UserEvent::Page(request.body().to_string()));
+            if navigation_allowed(true, &request.uri().to_string())
+                && request.body().len() <= storage::MAX_EDIT_BYTES * 6 + 16384
+            {
+                let _ = ipc_proxy.send_event(UserEvent::Page(request.body().to_string()));
+            } else {
+                log::line("Refused a message outside the application shell boundary.");
+            }
         })
         .with_asynchronous_custom_protocol(
             "asset".into(),
@@ -1988,9 +2251,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         boot_probe: false,
         navigation_ready,
         documents: Documents::new(Document::new(None, source)),
+        editor_sent: Default::default(),
         tray,
         tree_dir,
         root: root.clone(),
+        #[cfg(feature = "smoke")]
         smoke_started: (root::smoke_authorized(&root)
             && !arguments.is_empty()
             && arguments.iter().all(|path| path.starts_with(&root)))
@@ -2002,6 +2267,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         preview_theme: None,
         render_worker,
         io,
+        saver,
+        save_pending: None,
+        save_serial: 0,
+        after_save: None,
+        quit_discarded: Default::default(),
         workspace_worker,
         quick_request: 0,
         file_request: None,
@@ -2013,6 +2283,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         startup_target,
         startup_paths,
         recovery_checked: false,
+        recovery_scan: None,
         recovery_pending: Default::default(),
         recovery_flush: Instant::now(),
         recovery_activity: Instant::now(),
@@ -2022,6 +2293,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         fonts_loaded: false,
         window,
         webview,
+        _web_context: web_context,
     };
 
     log::line(&format!(
@@ -2042,9 +2314,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match event {
             Event::UserEvent(UserEvent::Rendered{generation,tab,revision,key,document}) if generation==app.generation&&tab==app.id&&revision==app.edit_revision => {
                     let fragment=std::mem::take(&mut app.pending_fragment);
-                    app.run_js(format!("window.app.finishDocument({});",json!({"tab":tab,"revision":revision,"generation":generation,"renderKey":key,"html":document.html,"outline":document.outline,"frontMatter":document.front_matter,"note":if app.read_only{"Large file: showing a read-only preview of the first 256 KB.".into()}else{document.note},"fragment":fragment})));
+                    app.run_js(format!("window.app.finishDocument({});",json!({"tab":tab,"revision":revision,"generation":generation,"renderKey":key,"html":document.html,"outline":document.outline,"frontMatter":document.front_matter,"note":if app.write_protected{"Read-only file. Save a copy to work with another file.".into()}else if app.read_only{"Large file: showing a read-only preview of the first 256 KB.".into()}else{document.note},"fragment":fragment})));
             }
             Event::UserEvent(UserEvent::Rendered { generation, tab, .. }) if generation == app.generation && tab == app.id => { app.render_current(app.scroll); }
+            Event::UserEvent(UserEvent::Saved { task, result }) => app.finish_save(task, result, control_flow),
             Event::UserEvent(UserEvent::Loaded{task,result})=>{
                 match result {
                     Ok(loaded) => app.finish_open(task, loaded),
@@ -2084,16 +2357,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Event::UserEvent(UserEvent::MacCommand(command))=>{
                 app.show();match command.as_str(){
                     "quit"=>app.quit(control_flow),
+                    "minimize"=>app.window.set_minimized(true),
+                    "findNext"=>app.run_js("if(!document.getElementById('find').classList.contains('show'))window.app.showFind(true);step(1);".into()),
+                    "findPrevious"=>app.run_js("if(!document.getElementById('find').classList.contains('show'))window.app.showFind(true);step(-1);".into()),
+                    "line"=>app.run_js("window.app.goToLine();".into()),
                     "help"=>app.run_js("window.app?.help(true);".into()),
                     "replace"=>app.run_js("window.app?.showFind(true);if(document.getElementById('replace-row').hidden)document.getElementById('find-replace').click();".into()),
                     "options"=>app.run_js("window.app?.options(true);".into()),
                     "close"=>app.handle(&json!({"cmd":"closeTab","id":app.id}).to_string(),control_flow),
-                    action=>{let button=match action{"new"=>"b-new","open"=>"b-open","folder"=>"folder-open","save"=>"b-save","saveAs"=>"b-saveas","find"=>"b-find",_=>""};if !button.is_empty(){app.run_js(format!("document.getElementById({}).click();",json!(button)));}}
+                    action=>{let button=match action{"new"=>"b-new","open"=>"b-open","folder"=>"folder-open","save"=>"b-save","saveAs"=>"b-saveas","find"=>"b-find","edit"=>"b-edit","source"=>"b-view","files"=>"b-side","zoomIn"=>"b-zoomin","zoomOut"=>"b-zoomout","zoomReset"=>"b-zoomreset",_=>""};if !button.is_empty(){app.run_js(format!("document.getElementById({}).click();",json!(button)));}}
                 }
             }
-            Event::UserEvent(UserEvent::PreferencesSaved { serial, error }) if serial == app.preference_serial => {
+            Event::UserEvent(UserEvent::PreferencesSaved { serial, error, warning }) if serial == app.preference_serial => {
                     if let Some(message) = &error { log::line(&format!("Preferences save failed: {message}")); }
-                    app.run_js(format!("window.app.settingsStatus({});", json!({"ok":error.is_none(),"message":error.map(|e|format!("Preferences not saved: {e}")).unwrap_or_default()})));
+                    app.run_js(format!("window.app.settingsStatus({});", json!({"ok":error.is_none(),"warning":warning.is_some(),"message":error.map(|e|format!("Preferences not saved: {e}")).or(warning).unwrap_or_default()})));
+            }
+            Event::UserEvent(UserEvent::RecoveryFound(scan)) => {
+                if app.ui_ready { if app.offer_recovery(scan) { app.activate_tab(app.id); app.persist_settings(); } }
+                else { app.recovery_scan = Some(scan); }
             }
             Event::UserEvent(UserEvent::FontsLoaded(fonts)) => {
                 app.fonts = fonts; app.fonts_loaded = true;

@@ -287,23 +287,15 @@ pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::ffi::OsStrExt;
-        let from: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
-        let to: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
-        if from[..from.len() - 1].contains(&0) || to[..to.len() - 1].contains(&0) {
-            return Err(io::Error::other("Invalid path"));
-        }
-        let result = unsafe {
-            #[link(name = "kernel32")]
-            unsafe extern "system" {
-                fn MoveFileW(old: *const u16, new: *const u16) -> i32;
-            }
-            MoveFileW(from.as_ptr(), to.as_ptr())
-        };
-        if result == 0 {
+        let from = crate::file_metadata::windows_path(from)?;
+        let to = crate::file_metadata::windows_path(to)?;
+        if unsafe { windows_sys::Win32::Storage::FileSystem::MoveFileW(from.as_ptr(), to.as_ptr()) }
+            == 0
+        {
             return Err(io::Error::last_os_error());
         }
     }
+
     Ok(())
 }
 

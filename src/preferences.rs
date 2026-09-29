@@ -48,7 +48,7 @@ impl Writer {
                 if let Some((serial, settings, _)) = task {
                     let bytes = serde_json::to_vec(&settings).unwrap_or_default();
                     let result = if bytes == last_bytes && last_ok {
-                        Ok(())
+                        Ok(None)
                     } else {
                         settings.save(&root)
                     };
@@ -56,9 +56,14 @@ impl Writer {
                     if last_ok {
                         last_bytes = bytes;
                     }
+                    let (warning, error) = match result {
+                        Ok(warning) => (warning, None),
+                        Err(error) => (None, Some(error.to_string())),
+                    };
                     let _ = proxy.send_event(UserEvent::PreferencesSaved {
                         serial,
-                        error: result.err().map(|e| e.to_string()),
+                        error,
+                        warning,
                     });
                 }
                 for done in barriers {

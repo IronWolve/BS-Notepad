@@ -195,7 +195,11 @@ impl IoWorker {
                             root,
                             serial,
                         } => {
-                            let path = crate::paths::normalize(&path);
+                            let path = if root {
+                                crate::paths::normalize(&path)
+                            } else {
+                                crate::paths::display_form(&path)
+                            };
                             let result =
                                 crate::tree::list_with_options(&path, hidden, dates, sort_date)
                                     .map_err(|e| e.to_string());

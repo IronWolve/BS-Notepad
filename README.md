@@ -6,7 +6,7 @@
 <p align="center">A quiet desktop workspace for notes, Markdown, source files, and images.</p>
 <p align="center">Windows · Linux · macOS</p>
 
-**Version 0.7.6** adds multi-file opening, draggable tabs, searchable recent files, fuller workspace restoration, larger Files text, and ten toolbar icon styles. It also fixes lingering “Loading…” labels and keeps Options at a steady size.
+**Version 0.8.0** adds Quick Open, file and folder actions, file timestamps with date sorting, editing helpers, and per-theme heading colors and adjustable soft shadows. It also improves session restoration, saving, and interface responsiveness.
 
 ![Long document with a full right-hand preview, the file browser closed, and no tabs](pics/screenshots/workspace.png)
 
@@ -16,7 +16,7 @@ Read a document, switch to its source, and edit it in the same window. BS Notepa
 
 - **Read and write.** Rendered Markdown, syntax-colored source, an editor, and a reading column that adapts to wide tables and code.
 - **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. The Outline toolbar button cycles through document headings, a hidden sidebar, and the file tree. Select several files in the Open dialog, or right-click or middle-click a file to open it in a tab. Drag tabs to reorder them, use Ctrl+P to find a workspace file, and browse Recent files from the main menu. Rename files or folders and create folders from the Files context menu. The calendar icon shows modified timestamps before each name; the sort icon switches between name order and newest first, keeping folders first.
-- **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast, choose rounded or square tabs with a quiet active-tab accent, and set separate interface, reading, and code fonts. Appearance includes per-theme heading colors, an optional soft shadow for large document headings, ten toolbar icon treatments, and an icon visibility slider; the soft outline style remains the default. Options → Fonts also has an independent Files size setting (12–48 px) for the file tree and outline.
+- **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast, choose rounded or square tabs with a quiet active-tab accent, and set separate interface, reading, and code fonts. Appearance includes per-theme heading colors, an optional soft shadow with an intensity slider for large document headings, ten toolbar icon treatments, and an icon visibility slider; the soft outline style remains the default. Options → Fonts also has an independent Files size setting (12–48 px) for the file tree and outline.
 - **Find your place.** Toggle Find, match case or whole words, replace text, jump to a line, and navigate with the optional document map.
 - **Look closer.** Images open inside the workspace with fit, actual size, zoom, pan, and a magnifying lens. Click a picture in Markdown to inspect it, then return to your reading position.
 - **Return to your work.** Restore tab order, the active file, viewing positions, and expanded folders; reopen a closed tab and recover unsaved drafts after an interrupted session. Saving checks for changes made on disk.
@@ -51,7 +51,7 @@ Windows packages also include `register-file-types.ps1` and `installed.json`. Th
 
 ## Keyboard shortcuts
 
-On macOS, use **Command** in place of **Ctrl** for the commands below.
+On macOS, use **Command** in place of **Ctrl**, except **Control+Tab** switches tabs, **Command+Option+F** opens Replace, **Command+L** goes to a line, and **Command+Shift+M** toggles Tab navigation.
 
 | Action | Shortcut |
 | --- | --- |

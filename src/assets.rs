@@ -50,7 +50,9 @@ fn resolve_scoped_image(path: &Path, scope: &Path) -> Option<PathBuf> {
             #[cfg(target_os = "windows")]
             let linked = {
                 use std::os::windows::fs::MetadataExt;
-                linked || meta.file_attributes() & 0x400 != 0
+                linked
+                    || meta.file_attributes() & 0x400 != 0
+                        && !crate::file_metadata::cloud_placeholder(&current)
             };
             if linked {
                 let target = std::fs::read_link(&current).ok()?;
@@ -303,7 +305,7 @@ pub fn serve(uri: &str) -> (Vec<u8>, &'static str, u16) {
     let decoded = decode(path_part.split('?').next().unwrap_or(""));
     if decoded.trim_start_matches('/') == "__ui/banner.png" {
         return (
-            include_bytes!("../pics/brand-banner.png").to_vec(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/help-banner.png")).to_vec(),
             "image/png",
             200,
         );

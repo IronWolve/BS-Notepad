@@ -13,6 +13,7 @@ pub struct Document {
     pub format: crate::storage::TextFormat,
     pub fingerprint: Option<u64>,
     pub read_only: bool,
+    pub write_protected: bool,
     pub external_changed: bool,
     pub disk: crate::disk::State,
     pub id: u64,
@@ -47,6 +48,7 @@ impl Document {
             format,
             fingerprint,
             read_only: false,
+            write_protected: false,
             external_changed: false,
             disk: Default::default(),
             id: 0,
@@ -78,6 +80,7 @@ impl Document {
         };
         doc.image = loaded.image;
         doc.read_only = loaded.read_only;
+        doc.write_protected = loaded.write_protected;
         doc
     }
     pub fn deferred(view: &crate::settings::SessionTab) -> Self {
@@ -172,10 +175,10 @@ impl Documents {
         self.tabs.push(document);
         self.active = self.tabs.len() - 1;
     }
-    pub fn replace(&mut self, mut document: Document) {
+    pub fn replace(&mut self, mut document: Document) -> Document {
         document.id = self.next_id;
         self.next_id += 1;
-        self.tabs[self.active] = document;
+        std::mem::replace(&mut self.tabs[self.active], document)
     }
     pub fn move_before(&mut self, id: u64, before: Option<u64>) -> bool {
         if before == Some(id)
@@ -198,9 +201,12 @@ impl Documents {
 
     // The caller must resolve unsaved changes before removing a document.
     pub fn remove(&mut self, id: u64) {
+        let _ = self.take(id);
+    }
+    pub fn take(&mut self, id: u64) -> Option<Document> {
         if let Some(index) = self.tabs.iter().position(|d| d.id == id) {
             let active_id = self.current().id;
-            self.tabs.remove(index);
+            let removed = self.tabs.remove(index);
             if self.tabs.is_empty() {
                 let mut blank = Document::new(None, String::new());
                 blank.editing = true;
@@ -212,6 +218,9 @@ impl Documents {
                     .position(|d| d.id == active_id)
                     .unwrap_or(index.min(self.tabs.len() - 1));
             }
+            Some(removed)
+        } else {
+            None
         }
     }
 }

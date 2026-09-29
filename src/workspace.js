@@ -1,4 +1,4 @@
-const shortcutLabel=text=>state.platform==='macos'?text.replaceAll('Ctrl+H','⌘⌥F').replaceAll('Ctrl+Shift+Tab','⌃⇧Tab').replaceAll('Ctrl+Tab','⌃Tab').replaceAll('Ctrl+G','⌘L').replaceAll('Ctrl+','⌘').replaceAll('Alt+','⌥'):text;
+const shortcutLabel=text=>state.platform==='macos'?text.replaceAll('Ctrl+H','⌘⌥F').replaceAll('Ctrl+M','⌘⇧M').replaceAll('Ctrl+Shift+Tab','⌃⇧Tab').replaceAll('Ctrl+Tab','⌃Tab').replaceAll('Ctrl+G','⌘L').replaceAll('Ctrl+','⌘').replaceAll('Alt+','⌥'):text;
 // Documents keep their own editor nodes so switching tabs preserves native undo.
 const editorNodes = new Map(), pendingViews = new Map();
 let mapTimer, mapFrame, mapHeight = 0, helpFocus, selectedHelp = 'start';
@@ -75,6 +75,7 @@ function wireEditor(node) {
     if(end<previous.length&&previous.charCodeAt(end)>=0xdc00&&previous.charCodeAt(end)<=0xdfff){end++;nextEnd++;}
     if(node._sentText===undefined)send({cmd:'edit',fromTab,text:next,revision});
     else send({cmd:'editPatch',fromTab,start,end,insert:next.slice(start,nextEnd),revision});
+    app.patchLines?.(node,revision-1,start,end,next.slice(start,nextEnd),next.length);
     app.patchMap?.(fromTab,revision-1,start,end,next.slice(start,nextEnd),next);
     node._sentText=next;
     app.refreshFind?.(); app.updateStatus?.(); app.scheduleMap();
@@ -167,7 +168,7 @@ app.goToAnchor=id=>{if(!id||id==='doc-top'){$('doc').scrollTop=0;return true;}co
 app.resendEditor=id=>{const node=editorNodes.get(id);if(node)send({cmd:'edit',fromTab:id,text:node.value,revision:Number(node.dataset.revision)});};
 app.editorReadiness=()=>{
  const node=$('text'),blocked=state.readOnly||state.image||node.dataset.ready==='false';
- node.readOnly=!!blocked;$('b-save').disabled=$('b-saveas').disabled=$('b-edit').disabled=$('replace-one').disabled=$('replace-all').disabled=!!blocked;
+ node.readOnly=!!blocked;$('b-save').disabled=$('b-saveas').disabled=$('b-edit').disabled=$('replace-one').disabled=$('replace-all').disabled=!!blocked;$('b-saveas').disabled=!!state.image||node.dataset.ready==='false'||!!state.readOnly&&!state.writeProtected;
  $('editor').setAttribute('aria-busy',String(node.dataset.ready==='false'));
 };
 app.beginDocument=payload=>{
@@ -179,7 +180,7 @@ app.beginDocument=payload=>{
   if(changed&&payload.editing&&(previousFocus===document.body||previousFocus?.tagName==='TEXTAREA'||previousFocus?.closest('#document-tabs')))state.focusEditorAfterLoad=payload.tab;
   const node=editorFor(payload.tab);if(node._sentText===undefined||payload.revision!==Number(node.dataset.revision))node.dataset.ready='false';
   if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();delete $('article').dataset.renderKey;app.mapData=null;}
-  state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
+  state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;state.writeProtected=!!payload.writeProtected;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
   app.restoreImageView?.(payload.tab,payload.imageView);
   if(!keepImage)app.setImage?.(payload.image,payload.tab);else app.syncImageControls();
   app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();app.editorReadiness();
@@ -198,7 +199,7 @@ app.setDocument = payload => {
   const changed=state.activeTab!==id || !editorNodes.has(id);
   editorFor(id);
   if(changed)pendingViews.set(id,payload);
-  state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;$("text").readOnly=state.readOnly;
+  state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;state.writeProtected=!!payload.writeProtected;$("text").readOnly=state.readOnly;
   app.restoreImageView?.(id,payload.imageView);
   if(!keepImage)app.setImage?.(payload.image,id);else app.syncImageControls();
   const replaced=!payload.renderKey||$('article').dataset.renderKey!==payload.renderKey;
@@ -220,7 +221,8 @@ app.setEditorText = payload => {
   const data=typeof payload==='string'?{tab:state.activeTab,text:payload,revision:0}:payload;
   const node=editorNodes.get(data.tab);if(!node)return;
   if((data.revision||0)<Number(node.dataset.revision||0))return;
-  if(node.value!==data.text)node.value=data.text;
+  if(typeof data.text!=='string'&&node.dataset.ready!=='true'){send({cmd:'needEditorText',tab:data.tab});return;}
+  if(typeof data.text==='string'&&node.value!==data.text){node.value=data.text;app.invalidateLines(node);}
   node.dataset.revision=data.revision||0;node._sentText=node.value;node.dataset.ready='true';
   if(data.tab===state.activeTab)app.editorReadiness();
   const view=pendingViews.get(data.tab);
@@ -553,7 +555,7 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:'New folder…',icon:'workspace',action:()=>app.fileAction('folder',state.workspace,true)},
  {label:'Choose a workspace folder…',icon:'workspace',action:()=>$('folder-open').click()},null,
  {label:'Save edits',icon:'save',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+S',action:()=>$('b-save').click()},
- {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
+ {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly&&!state.writeProtected||!!state.image,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
  {label:'Read again from disk',icon:'reload',hint:'F5',disabled:!state.path,action:()=>send({cmd:'reload'})},
  {label:'Close this tab',icon:'close',hint:'Ctrl+W',action:()=>send({cmd:'closeTab',id:state.activeTab})},
  {label:'Reopen closed tab',icon:'newTab',hint:'Ctrl+Shift+T',action:()=>send({cmd:'reopenTab'})},null,
@@ -602,9 +604,7 @@ app.drawMap=()=>{
 };
 app.patchMap=(tab,revision,start,end,insert,text)=>{
  const cache=app.mapData;if(!cache||cache.key!=='edit:'+tab+':'+revision)return;
- const prefix=cache.starts.filter(offset=>offset<=start),suffix=cache.starts.filter(offset=>offset>end).map(offset=>offset+insert.length-(end-start));
- let pos=-1;while((pos=insert.indexOf('\n',pos+1))!==-1)prefix.push(start+pos+1);
- app.mapData={key:'edit:'+tab+':'+(revision+1),text,starts:[...prefix,...suffix]};
+ app.mapData={key:'edit:'+tab+':'+(revision+1),text,starts:patchLineStarts(cache.starts,start,end,insert)};
 };
 app.scheduleMap=()=>{clearTimeout(mapTimer);mapTimer=setTimeout(()=>{cancelAnimationFrame(mapFrame);mapFrame=requestAnimationFrame(app.drawMap);},75);};
 let mapDrag=null;
@@ -678,11 +678,15 @@ app.layoutReader=()=>{
   const style=getComputedStyle(article),padding=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),size=parseFloat(style.fontSize);
   if(readerMeasure)readerMeasure.font=size+'px '+style.fontFamily;
   const prose=Math.max(680,Math.min(960,(readerMeasure?readerMeasure.measureText('0'.repeat(82)).width:82*size*.55)+padding));
-  const blocks=[...article.querySelectorAll('table,pre')].map(element=>({element,width:element.style.getPropertyValue('width'),max:element.style.getPropertyValue('max-width')}));
-  for(const block of blocks){block.element.style.width='max-content';block.element.style.maxWidth='none';}
-  let widest=prose;
-  for(const block of blocks)widest=Math.max(widest,block.element.scrollWidth+padding);
-  for(const block of blocks){block.element.style.width=block.width;block.element.style.maxWidth=block.max;}
+  const measureKey=[article.dataset.renderKey,state.activeTab,state.renderRevision,state.settings.body_font,state.settings.code_font,state.settings.body_size,state.settings.code_size,state.settings.zoom,state.settings.tab_size].join('|');
+  if(app.readerMeasurements?.key!==measureKey){
+   const blocks=[...article.querySelectorAll('table,pre')].map(element=>({element,width:element.style.getPropertyValue('width'),max:element.style.getPropertyValue('max-width')}));
+   for(const block of blocks){block.element.style.width='max-content';block.element.style.maxWidth='none';}
+   let widest=prose;for(const block of blocks)widest=Math.max(widest,block.element.scrollWidth+padding);
+   for(const block of blocks){block.element.style.width=block.width;block.element.style.maxWidth=block.max;}
+   app.readerMeasurements={key:measureKey,widest};
+  }
+  let widest=app.readerMeasurements.widest;
   for(const image of article.querySelectorAll('img'))widest=Math.max(widest,(Number(image.getAttribute('width'))||image.naturalWidth||0)+padding);
   const width=Math.min(available,Math.ceil(widest)),offset=Math.max(0,Math.floor((available-width)*.4));
   article.style.setProperty('--reader-width',width+'px');article.style.setProperty('--reader-offset',offset+'px');
@@ -741,7 +745,7 @@ document.addEventListener('keydown',e=>{
  else if(e.key==='F5'){e.preventDefault();e.stopImmediatePropagation();send({cmd:'reload'});}
 },true);
 
-app.settingsStatus=payload=>{const message=payload.ok?"Changes save automatically.":payload.message;$("pnote").textContent=message;if(!payload.ok)app.note(message);};
+app.settingsStatus=payload=>{const message=payload.message||(payload.ok?"Changes save automatically.":"Preferences could not be saved.");$("pnote").textContent=message;if(!payload.ok||payload.warning)app.note(message);};
 
 $('disk-reload').onclick=()=>send({cmd:'reload'});
 $('disk-keep').onclick=()=>send({cmd:'keepDisk'});
@@ -796,19 +800,21 @@ app.fileDate=timestamp=>{
 };
 app.updateFileDate=row=>{
  let date=row.querySelector(':scope > .file-date');
- if(!state.settings.file_dates){date?.remove();return;}
+ if(!state.settings.file_dates){date?.remove();row.setAttribute('aria-label',row.dataset.name||'');return;}
  if(!date){date=document.createElement('time');date.className='file-date';row.prepend(date);}
- const timestamp=row.dataset.modified;date.textContent=app.fileDate(timestamp);
+ const timestamp=row.dataset.modified;date.textContent=app.fileDate(timestamp);date.removeAttribute('datetime');
  if(timestamp&&Number.isFinite(Number(timestamp))){const value=new Date(Number(timestamp));if(Number.isFinite(value.getTime()))date.dateTime=value.toISOString();}
  else date.removeAttribute('datetime');
- date.title=date.textContent==='—'?'Modified time unavailable':'Modified '+date.textContent;date.setAttribute('aria-label',date.title);
+ date.title=date.textContent==='—'?'Modified time unavailable':'Modified '+date.textContent;date.setAttribute('aria-label',date.title);row.setAttribute('aria-label',(row.dataset.name||'')+' · '+date.title);
 };
 app.applyFileDates=()=>{
  const settings=state.settings;
  document.documentElement.style.setProperty('--file-date-width',(settings.file_time_24h?16:19)+(settings.file_time_seconds?3:0)+'ch');
- $('folder-dates').setAttribute('aria-pressed',String(!!settings.file_dates));$('folder-dates').title=settings.file_dates?'Hide modified dates':'Show modified dates';$('folder-dates').setAttribute('aria-label',$('folder-dates').title);
- $('folder-sort').setAttribute('aria-pressed',String(!!settings.file_sort_date));$('folder-sort').title=settings.file_sort_date?'Sort by name':'Sort by modified date · newest first';$('folder-sort').setAttribute('aria-label',$('folder-sort').title);
+ $('folder-dates').setAttribute('aria-pressed',String(!!settings.file_dates));$('folder-dates').title=settings.file_dates?'Hide modified dates':'Show modified dates';$('folder-dates').setAttribute('aria-label','Modified dates');
+ $('folder-sort').setAttribute('aria-pressed',String(!!settings.file_sort_date));$('folder-sort').title=settings.file_sort_date?'Sort by name':'Sort by modified date · newest first';$('folder-sort').setAttribute('aria-label','Sort by modified date');
  for(const row of $('pane-files').querySelectorAll('.item[data-path]'))app.updateFileDate(row);
 };
 $('folder-dates').onclick=()=>send({cmd:'setting',key:'file_dates',value:!state.settings.file_dates});
 $('folder-sort').onclick=()=>send({cmd:'setting',key:'file_sort_date',value:!state.settings.file_sort_date});
+
+app.saveStatus=payload=>{state.savingTab=payload.busy?payload.tab:null;$('b-save').setAttribute('aria-busy',String(payload.busy&&payload.tab===state.activeTab));};
