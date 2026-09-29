@@ -190,9 +190,9 @@ impl App {
                         editor_scroll: d.editor_scroll,
                         selection_start: d.selection_start,
                         selection_end: d.selection_end,
+                        image_view: d.image_view.clone(),
                     })
                 })
-                .take(40)
                 .collect();
         }
         let result = self.settings.save(&self.root);
@@ -432,6 +432,7 @@ impl App {
             "selectionStart": self.selection_start,
             "selectionEnd": self.selection_end,
             "dirty": self.dirty,
+            "imageView": self.image_view,
             "image":self.image.as_ref().and_then(|image|self.path.as_ref().map(|path|json!({"format":image.format,"bytes":image.bytes,"url":format!("{}?image={}-{}",assets::url_for(&path.to_string_lossy(),None),self.id,self.seen_mtime.and_then(|time|time.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_nanos()).unwrap_or(0))}))),
             "encoding": self.format.encoding, "lineEnding":self.format.ending, "readOnly":self.read_only, "externalChanged":self.external_changed,
             "generation":self.generation,
@@ -513,6 +514,7 @@ impl App {
             document.editor_scroll = self.editor_scroll;
             document.selection_start = self.selection_start;
             document.selection_end = self.selection_end;
+            document.image_view = self.image_view.clone();
         }
         if let Some(view) = task.view {
             document.scroll = view.scroll;
@@ -520,6 +522,7 @@ impl App {
             document.editor_scroll = view.editor_scroll;
             document.selection_start = view.selection_start;
             document.selection_end = view.selection_end;
+            document.image_view = view.image_view;
         }
         if task.new_tab || self.id != task.from || self.edit_revision != task.revision {
             self.documents.insert(document);
@@ -533,12 +536,14 @@ impl App {
             self.documents.replace(document);
         }
         assets::set_scope(task.path.parent());
-        self.settings.remember(&task.path);
+        if !task.restore || self.startup_target.is_none() {
+            self.settings.remember(&task.path);
+        }
         self.pending_fragment = task.fragment;
         self.render_current(self.scroll);
         self.send_recents();
         self.persist_settings();
-        if !task.reload && !task.path.starts_with(&self.tree_dir) {
+        if !task.reload && !task.restore && !task.path.starts_with(&self.tree_dir) {
             if let Some(parent) = task.path.parent() {
                 self.send_tree(parent.into());
             }
@@ -560,8 +565,10 @@ impl App {
         if let Some(dir) = self.path.as_ref().and_then(|p| p.parent()) {
             dialog = dialog.set_directory(dir);
         }
-        if let Some(picked) = dialog.pick_file() {
-            self.open(picked, true);
+        if let Some(picked) = dialog.pick_files() {
+            for path in picked {
+                self.open(path, true);
+            }
         }
     }
 
@@ -722,7 +729,7 @@ impl App {
             return;
         };
         let command = value.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
-        if command != "scroll" && command != "edit" && command != "editPatch" {
+        if !["scroll", "edit", "editPatch", "viewState", "treeState"].contains(&command) {
             log::line(&format!("page: {}", command));
         }
 
@@ -743,6 +750,15 @@ impl App {
                     }
                     if let Some(v) = view.get("selectionEnd").and_then(|v| v.as_u64()) {
                         doc.selection_end = v;
+                    }
+                    if doc.image.is_some() {
+                        if let Some(view) = view.get("imageView").and_then(|v| {
+                            serde_json::from_value::<settings::ImageView>(v.clone()).ok()
+                        }) {
+                            let mut view = view;
+                            view.normalize();
+                            doc.image_view = Some(view);
+                        }
                     }
                 }
             }
@@ -1041,6 +1057,7 @@ impl App {
                             editor_scroll: doc.editor_scroll,
                             selection_start: doc.selection_start,
                             selection_end: doc.selection_end,
+                            image_view: doc.image_view.clone(),
                         };
                         self.io.send(jobs::IoTask::Open(jobs::OpenTask {
                             restore: false,
@@ -1057,6 +1074,51 @@ impl App {
                         self.documents.insert(doc);
                         self.activate_tab(self.id);
                     }
+                }
+            }
+            "moveTab" => {
+                if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+                    let before = value.get("before").and_then(|v| v.as_u64());
+                    if self.documents.move_before(id, before) {
+                        self.send_tabs();
+                        self.persist_settings();
+                    }
+                }
+            }
+            "treeState"
+                if value
+                    .get("workspace")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|path| Path::new(path) == self.tree_dir) =>
+            {
+                if let Some(paths) = value.get("expanded").and_then(|v| v.as_array()) {
+                    self.settings.expanded_folders = paths
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .filter(|path| Path::new(path).starts_with(&self.tree_dir))
+                        .map(str::to_owned)
+                        .collect();
+                }
+                if let Some(scroll) = value.get("scroll").and_then(|v| v.as_f64()) {
+                    self.settings.tree_scroll = scroll;
+                }
+                if let Some(filter) = value.get("filter").and_then(|v| v.as_str()) {
+                    self.settings.tree_filter = filter.into();
+                }
+                self.settings
+                    .expanded_folders
+                    .retain(|path| path.len() <= 131072);
+                self.settings.tree_scroll = if self.settings.tree_scroll.is_finite() {
+                    self.settings.tree_scroll.clamp(0.0, 100_000_000.0)
+                } else {
+                    0.0
+                };
+                if value
+                    .get("persist")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    self.persist_settings();
                 }
             }
             "cycleSidebar" => {
@@ -1195,6 +1257,9 @@ impl App {
                 self.settings.recents = old.recents;
                 self.settings.last_path = old.last_path;
                 self.settings.workspace = old.workspace;
+                self.settings.expanded_folders = old.expanded_folders;
+                self.settings.tree_scroll = old.tree_scroll;
+                self.settings.tree_filter = old.tree_filter;
                 self.settings.blocked_write = old.blocked_write;
                 self.settings.last_scroll = old.last_scroll;
                 self.send_tree(self.tree_dir.clone());
@@ -1505,7 +1570,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if restoring{app.startup_pending=app.startup_pending.saturating_sub(1);if app.startup_pending==0{if let Some(target)=app.startup_target.take(){if let Some(id)=app.documents.find_path(&target){app.activate_tab(id);}}app.persist_settings();}}
             },
             Event::UserEvent(UserEvent::TreeLoaded{path,request,root,serial,result})=>{
-                if root{if serial==app.tree_serial{match result{Ok(entries)=>{app.tree_dir=path.clone();app.settings.workspace=path.to_string_lossy().into_owned();app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":entries})));app.persist_settings();},Err(error)=>app.notify(&format!("Cannot read folder: {}",error))}}}
+                if root{if serial==app.tree_serial{match result{Ok(entries)=>{if Path::new(&app.settings.workspace)!=path {app.settings.expanded_folders.clear();app.settings.tree_scroll=0.0;app.settings.tree_filter.clear();}app.tree_dir=path.clone();app.settings.workspace=path.to_string_lossy().into_owned();app.run_js(format!("window.app.setTree({});",json!({"dir":path.to_string_lossy(),"parent":path.parent().is_some(),"entries":entries,"view":{"expanded":app.settings.expanded_folders,"scroll":app.settings.tree_scroll,"filter":app.settings.tree_filter}})));app.persist_settings();},Err(error)=>app.notify(&format!("Cannot read folder: {}",error))}}}
                 else{let(entries,error)=match result{Ok(entries)=>(entries,None),Err(error)=>(Vec::new(),Some(error))};app.run_js(format!("window.app.setEntries({});",json!({"path":path.to_string_lossy(),"request":request,"entries":entries,"error":error})));}
             }
             Event::UserEvent(UserEvent::DiskChecked{tab,revision,changed})=>{if let Some(doc)=app.documents.get_mut(tab){if revision==doc.edit_revision{doc.external_changed=changed;}}

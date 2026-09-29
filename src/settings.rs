@@ -3,6 +3,36 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct ImageView {
+    pub scale: f64,
+    pub fit: bool,
+    pub loupe: bool,
+    pub left: f64,
+    pub top: f64,
+}
+impl ImageView {
+    pub fn normalize(&mut self) {
+        self.scale = if self.scale.is_finite() {
+            self.scale.clamp(0.01, 8.0)
+        } else {
+            1.0
+        };
+        self.left = if self.left.is_finite() {
+            self.left.clamp(0.0, 100_000_000.0)
+        } else {
+            0.0
+        };
+        self.top = if self.top.is_finite() {
+            self.top.clamp(0.0, 100_000_000.0)
+        } else {
+            0.0
+        };
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
 pub struct SessionTab {
     pub path: String,
     pub scroll: f32,
@@ -10,6 +40,7 @@ pub struct SessionTab {
     pub editor_scroll: f64,
     pub selection_start: u64,
     pub selection_end: u64,
+    pub image_view: Option<ImageView>,
 }
 
 pub const RECENT_MAX: usize = 15;
@@ -28,6 +59,9 @@ pub struct Settings {
     pub log_retention_days: u32,
     pub backup_retention: u32,
     pub workspace: String,
+    pub expanded_folders: Vec<String>,
+    pub tree_scroll: f64,
+    pub tree_filter: String,
     pub show_hidden: bool,
     pub minimap: bool,
     pub status_bar: bool,
@@ -38,6 +72,8 @@ pub struct Settings {
     pub text_contrast: u32,
     pub tab_shape: String,
     pub tab_highlight: String,
+    pub icon_style: String,
+    pub icon_visibility: u32,
     pub ui_font: String,
     pub body_font: String,
     pub code_font: String,
@@ -84,6 +120,9 @@ impl Default for Settings {
             backup_retention: 3,
             settings_version: 1,
             workspace: String::new(),
+            expanded_folders: Vec::new(),
+            tree_scroll: 0.0,
+            tree_filter: String::new(),
             show_hidden: false,
             minimap: true,
             status_bar: true,
@@ -94,6 +133,8 @@ impl Default for Settings {
             text_contrast: 0,
             tab_shape: "rounded".into(),
             tab_highlight: "soft".into(),
+            icon_style: "soft".into(),
+            icon_visibility: 35,
             // Generic stacks: the machine may not have any particular family,
             // and a missing font must degrade rather than break.
             ui_font: "system-ui, -apple-system, Segoe UI, sans-serif".into(),
@@ -180,7 +221,29 @@ impl Settings {
         self.window_height = self.window_height.clamp(400, 4320);
         self.log_retention_days = self.log_retention_days.clamp(1, 365);
         self.backup_retention = self.backup_retention.clamp(1, 20);
-        self.saved_tabs.truncate(40);
+        self.expanded_folders
+            .retain(|path| !path.is_empty() && path.len() <= 131072);
+        self.expanded_folders.sort();
+        self.expanded_folders.dedup();
+        self.tree_scroll = if self.tree_scroll.is_finite() {
+            self.tree_scroll.clamp(0.0, 100_000_000.0)
+        } else {
+            0.0
+        };
+        self.icon_visibility = self.icon_visibility.clamp(20, 100);
+        if ![
+            "soft", "crisp", "fine", "bold", "square", "rounded", "duotone", "color", "pastel",
+            "contrast",
+        ]
+        .contains(&self.icon_style.as_str())
+        {
+            self.icon_style = "soft".into();
+        }
+        for tab in &mut self.saved_tabs {
+            if let Some(view) = &mut tab.image_view {
+                view.normalize();
+            }
+        }
         self.theme_favorites
             .retain(|id| crate::theme::builtin().iter().any(|t| t.id == *id));
         self.theme_favorites.sort();

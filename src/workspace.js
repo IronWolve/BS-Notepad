@@ -15,6 +15,7 @@ const MENU_PATHS={
  workspace:'<path d="M3 5h6l3 3h9v12H3zM8 8v12M5 12h1M5 15h1"/>',
  save:'<path d="M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/>',
  saveAs:'<path d="M4 3h12l3 3v5M7 3v6h8M3 3v18h8M13 18l6-6 3 3-6 6-4 1z"/>',
+ recent:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/>',
  reload:'<path d="M20 6v6h-6M20 12a8 8 0 1 0-2 6"/>',
  close:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m9 9 6 6m0-6-6 6"/>',
  closeOthers:'<path d="M8 4h13v12M3 8h13v13H3zM7 12l5 5m0-5-5 5"/>',
@@ -58,7 +59,9 @@ function wireEditor(node) {
       e.preventDefault(); document.execCommand('insertText',false,' '.repeat(state.settings.tab_size || 4));
     }
   };
-  node.onscroll = () => { app.mapPosition(); };
+  const rememberView=()=>{if(state.activeTab===Number(node.dataset.documentId)&&!state.renderPending)send({cmd:'viewState'});};
+  node.onscroll = () => { app.mapPosition(); rememberView(); };
+  node.onselect = node.onkeyup = rememberView;
 }
 wireEditor($('text'));
 editorNodes.set(1,$('text'));
@@ -93,12 +96,20 @@ app.setTabs = payload => {
     const wrap=document.createElement('div');wrap.className='document-tab'+(tab.id===payload.active?' active':'');wrap.dataset.id=tab.id;
     const button=document.createElement('button');button.className='tab-label';button.dataset.tabId=tab.id;button.setAttribute('role','tab');
     button.id='tab-'+tab.id;button.setAttribute('aria-controls','content-row');button.setAttribute('aria-selected',String(tab.id===payload.active));button.tabIndex=tab.id===payload.active?0:-1;
-    button.title=tab.path || tab.name;
+    button.title=(tab.path || tab.name)+'\n'+shortcutLabel('Drag to reorder · Ctrl+Shift+Left/Right');
+    button.setAttribute('aria-keyshortcuts',state.platform==='macos'?'Meta+Shift+ArrowLeft Meta+Shift+ArrowRight':'Control+Shift+ArrowLeft Control+Shift+ArrowRight');
+    button.onpointerdown=e=>app.startTabDrag(e,tab,button);
     const label=document.createElement('span');label.className='tab-name';label.textContent=tab.name;
     const dirty=document.createElement('span');dirty.className='tab-dirty';dirty.textContent='●';dirty.hidden=!tab.dirty;dirty.setAttribute('aria-label','Unsaved changes');
     button.append(fileIcon(tab.name),label,dirty);
-    button.onclick=()=>send({cmd:'activateTab',id:tab.id});
+    button.onclick=()=>{if(!ignoreTabClick)send({cmd:'activateTab',id:tab.id});};
     button.onkeydown=e=>{
+      if((e.ctrlKey||e.metaKey)&&e.shiftKey&&['ArrowLeft','ArrowRight'].includes(e.key)) {
+        e.preventDefault();const index=payload.tabs.findIndex(t=>t.id===tab.id);
+        if(e.key==='ArrowLeft'&&index>0)send({cmd:'moveTab',id:tab.id,before:payload.tabs[index-1].id});
+        if(e.key==='ArrowRight'&&index<payload.tabs.length-1)send({cmd:'moveTab',id:tab.id,before:payload.tabs[index+2]?.id??null});
+        return;
+      }
       if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) {
         e.preventDefault();const index=payload.tabs.findIndex(t=>t.id===tab.id);
         const next=e.key==='Home'?0:e.key==='End'?payload.tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+payload.tabs.length)%payload.tabs.length;
@@ -138,6 +149,7 @@ app.beginDocument=payload=>{
   const changed=state.activeTab!==payload.tab||!editorNodes.has(payload.tab);
   editorFor(payload.tab);if(changed){pendingViews.set(payload.tab,payload);clearMarks();$('article').replaceChildren();}
   state.path=payload.path||'';state.encoding=payload.encoding;state.lineEnding=payload.lineEnding;state.readOnly=!!payload.readOnly;$('text').readOnly=state.readOnly;$('b-edit').disabled=state.readOnly;$('replace-one').disabled=$('replace-all').disabled=state.readOnly;
+  app.restoreImageView?.(payload.tab,payload.imageView);
   if(!keepImage)app.setImage?.(payload.image,payload.tab);else app.syncImageControls();
   app.toggleEdit(payload.editing,false);app.setDirty(payload.dirty);app.diskStatus(!!payload.externalChanged);app.updateStatus();
 };
@@ -156,6 +168,7 @@ app.setDocument = payload => {
   editorFor(id);
   if(changed)pendingViews.set(id,payload);
   state.encoding=payload.encoding || "UTF-8";state.lineEnding=payload.lineEnding || "LF";state.readOnly=!!payload.readOnly;$("text").readOnly=state.readOnly;
+  app.restoreImageView?.(id,payload.imageView);
   if(!keepImage)app.setImage?.(payload.image,id);else app.syncImageControls();
   baseDocument(payload);state.renderRevision=payload.revision??0;
   for(const table of $('article').querySelectorAll('table')) {
@@ -183,7 +196,70 @@ app.setEditorText = payload => {
   }
   app.updateStatus?.(); app.scheduleMap();
 };
+let tabDrag=null,tabDragFrame,ignoreTabClick=false;
+function clearTabDrop(){for(const node of $('document-tabs').querySelectorAll('.tab-drop-before,.tab-drop-after'))node.classList.remove('tab-drop-before','tab-drop-after');$('document-tabs').classList.remove('tab-drop-end');}
+function updateTabDrag(){
+ const drag=tabDrag;if(!drag?.started)return;
+ const strip=$('document-tabs'),bounds=strip.getBoundingClientRect();clearTabDrop();
+ drag.valid=drag.y>=bounds.top-12&&drag.y<=bounds.bottom+12&&drag.x>=bounds.left-12&&drag.x<=bounds.right+12;
+ if(drag.valid){
+  if(drag.x<bounds.left+25)strip.scrollLeft-=10;else if(drag.x>bounds.right-25)strip.scrollLeft+=10;
+  const target=[...strip.querySelectorAll('.document-tab')].filter(node=>Number(node.dataset.id)!==drag.id).find(node=>{const r=node.getBoundingClientRect();return drag.x<r.left+r.width/2;});
+  drag.before=target?Number(target.dataset.id):null;
+  if(target)target.classList.add('tab-drop-before');else {const last=[...strip.querySelectorAll('.document-tab')].filter(node=>Number(node.dataset.id)!==drag.id).at(-1);if(last)last.classList.add('tab-drop-after');else strip.classList.add('tab-drop-end');}
+ }
+ tabDragFrame=requestAnimationFrame(updateTabDrag);
+}
+function finishTabDrag(event,cancel=false){
+ const drag=tabDrag;if(!drag||event?.pointerId!==undefined&&event.pointerId!==drag.pointer)return;
+ cancelAnimationFrame(tabDragFrame);if(drag.started&&!cancel){updateTabDrag();cancelAnimationFrame(tabDragFrame);}
+ tabDrag=null;clearTabDrop();document.body.classList.remove('tab-reordering');drag.node.closest('.document-tab')?.classList.remove('tab-dragging');
+ if(drag.node.hasPointerCapture(drag.pointer))drag.node.releasePointerCapture(drag.pointer);
+ if(drag.started){ignoreTabClick=true;setTimeout(()=>{ignoreTabClick=false;},0);if(drag.valid&&!cancel)send({cmd:'moveTab',id:drag.id,before:drag.before});}
+}
+app.startTabDrag=(event,tab,node)=>{
+ if(event.button!==0||event.isPrimary===false||tabDrag||event.ctrlKey||event.metaKey||event.altKey)return;
+ tabDrag={pointer:event.pointerId,id:tab.id,node,startX:event.clientX,startY:event.clientY,x:event.clientX,y:event.clientY,started:false,valid:false,before:null};node.setPointerCapture(event.pointerId);
+};
+$('document-tabs').onpointermove=event=>{
+ const drag=tabDrag;if(!drag||event.pointerId!==drag.pointer)return;
+ drag.x=event.clientX;drag.y=event.clientY;
+ if(!drag.started&&Math.hypot(drag.x-drag.startX,drag.y-drag.startY)>6){drag.started=true;document.body.classList.add('tab-reordering');drag.node.closest('.document-tab')?.classList.add('tab-dragging');updateTabDrag();}
+ if(drag.started)event.preventDefault();
+};
+$('document-tabs').onpointerup=event=>finishTabDrag(event);
+$('document-tabs').onpointercancel=$('document-tabs').onlostpointercapture=event=>finishTabDrag(event,true);
+window.addEventListener('blur',()=>finishTabDrag(null,true));
+
 $('tab-new').onclick=()=>$('b-new').click();
+
+app.saveTreeState=(persist=false,folders=true)=>{
+  if(!state.workspace||state.restoringTree)return;
+  const pane=$('pane-files');if(pane.clientHeight)state.treeScroll=pane.scrollTop;
+  const message={cmd:'treeState',workspace:state.workspace,scroll:state.treeScroll||0,filter:$('tree-filter').value,persist};
+  if(folders)message.expanded=[...pane.querySelectorAll('.dir[aria-expanded="true"]')].map(row=>row.dataset.path);
+  send(message);
+};
+app.restoreTreeSession=view=>{
+  state.treeScroll=Number.isFinite(view?.scroll)?Math.max(0,view.scroll):0;
+  $('tree-filter').value=view?.filter||'';
+  state.restoringTree={paths:new Set(view?.expanded||[]),scroll:state.treeScroll};
+};
+app.continueTreeRestore=()=>{
+  const saved=state.restoringTree;if(!saved)return;
+  for(const row of $('pane-files').querySelectorAll('.dir[aria-expanded="false"]')){
+    if(saved.paths.has(row.dataset.path)){
+      row.setAttribute('aria-expanded','true');fillFileRow(row,row.dataset.name,true,true);app.requestFolder(row);
+    }
+  }
+  if(!pendingFolders.size){
+    state.treeScroll=saved.scroll;state.restoringTree=null;
+    if($('pane-files').clientHeight)$('pane-files').scrollTop=saved.scroll;
+    app.saveTreeState(true);
+  }
+};
+$('pane-files').onscroll=()=>{if($('pane-files').clientHeight)app.saveTreeState(false,false);};
+
 
 function popupPosition(popup,anchor,point) {
   popup.hidden=false;
@@ -199,7 +275,7 @@ function closeChoices(focus=true) {
 }
 function showMenu(anchor,items,point) {
   closeChoices(false);closeMenu(false);menuOrigin=anchor;
-  const menu=$('menu-popup');menu.replaceChildren();
+  const menu=$('menu-popup');menu.classList.remove('recent-menu');menu.setAttribute('role','menu');menu.removeAttribute('aria-label');menu.style.maxHeight='';menu.replaceChildren();
   for(const item of items) {
     if(!item){menu.appendChild(document.createElement('hr'));continue;}
     const button=document.createElement('button');button.setAttribute('role','menuitem');button.disabled=!!item.disabled;if(item.brand)button.classList.add('menu-brand');
@@ -213,6 +289,35 @@ function showMenu(anchor,items,point) {
   }
   popupPosition(menu,anchor,point);syncPopupState();menu.querySelector('button:not(:disabled)')?.focus();
 }
+app.drawRecents=()=>{
+  const menu=$('menu-popup'),list=menu.querySelector('.recent-list');if(!list)return;
+  const query=menu.querySelector('#recent-search').value.trim().toLowerCase();
+  const paths=(state.recents||[]).filter(path=>cleanPath(path).toLowerCase().includes(query));list.replaceChildren();
+  for(const path of paths){
+    const button=document.createElement('button');button.className='recent-entry';button.setAttribute('role','menuitem');button.title=path;
+    const name=fileName(path),folder=cleanPath(path).slice(0,-name.length).replace(/\/$/,'');
+    button.setAttribute('aria-label','Open '+name+' from '+folder);
+    const text=document.createElement('span');text.className='recent-text';
+    const label=document.createElement('span');label.className='recent-name';label.textContent=name;
+    const detail=document.createElement('span');detail.className='recent-folder';detail.textContent=folder;
+    text.append(label,detail);button.append(fileIcon(name),text);
+    if((state.tabs||[]).some(tab=>samePath(tab.path,path))){const opened=document.createElement('span');opened.className='recent-open';opened.textContent='Open';button.appendChild(opened);}
+    button.onclick=()=>{closeMenu();send({cmd:'openPath',path,newTab:true});};list.appendChild(button);
+  }
+  if(!paths.length){const empty=document.createElement('p');empty.className='recent-empty';empty.textContent=query?'No matching recent files.':'Your recent files will appear here.';list.appendChild(empty);}
+  const clear=menu.querySelector('.recent-clear'),focused=document.activeElement===clear;clear.disabled=!(state.recents||[]).length;if(focused&&clear.disabled)menu.querySelector('#recent-search').focus();
+};
+app.showRecents=()=>{
+  closeChoices(false);closeMenu(false);menuOrigin=$('b-menu');
+  const menu=$('menu-popup');menu.replaceChildren();menu.classList.add('recent-menu');menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Recent files');
+  menu.style.maxHeight=Math.max(180,innerHeight-$('b-menu').getBoundingClientRect().bottom-20)+'px';
+  const header=document.createElement('div');header.className='recent-header';
+  const title=document.createElement('strong');title.textContent='Recent files';
+  const clear=document.createElement('button');clear.className='recent-clear';clear.textContent='Clear';clear.title='Clear recent file history';clear.setAttribute('aria-label',clear.title);clear.onclick=()=>send({cmd:'clearRecents'});header.append(title,clear);
+  const search=document.createElement('input');search.id='recent-search';search.type='search';search.placeholder='Find a recent file…';search.setAttribute('aria-label','Find a recent file');search.oninput=app.drawRecents;
+  const list=document.createElement('div');list.className='recent-list';list.setAttribute('role','menu');list.setAttribute('aria-label','Recent file results');menu.append(header,search,list);app.drawRecents();popupPosition(menu,menuOrigin);syncPopupState();search.focus();
+};
+
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); }
   catch {
@@ -245,6 +350,11 @@ function labelChoice(button,label) {
   const text=document.createElement('span');text.className='selected-label';text.textContent=label;
   const arrow=document.createElement('span');arrow.className='select-arrow';arrow.textContent='▾';arrow.setAttribute('aria-hidden','true');button.replaceChildren(text,arrow);
 }
+app.iconSample=style=>{
+  const preview=document.createElement('span');preview.className='icon-treatment';preview.dataset.iconStyle=style;preview.setAttribute('aria-hidden','true');
+  for(const icon of ['workspace','edit','options']){const cell=document.createElement('span');cell.className='icon-sample';cell.innerHTML=menuIcon(icon);preview.appendChild(cell);}
+  return preview;
+};
 app.selectControl = (options,value,change,label) => {
   const button=document.createElement('button');button.className='select-control';button.type='button';button.setAttribute('role','combobox');
   button.setAttribute('aria-label',label);button.setAttribute('aria-haspopup','listbox');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','choice-list');
@@ -265,7 +375,8 @@ app.themeFilters = changed => {
 function layoutChoices() {
   const popup=$('choice-popup');if(popup.hidden||!choiceOrigin)return;
   const rect=choiceOrigin.getBoundingClientRect(),down=innerHeight-rect.bottom-14,up=rect.top-14;
-  const above=down<180&&up>down,available=Math.max(80,above?up:down);
+  const needed=$('choice-list').scrollHeight+popup.offsetHeight-$('choice-list').clientHeight;
+  const above=needed>down&&up>down,available=Math.max(80,above?up:down);
   popup.style.maxHeight=available+'px';
   $('choice-list').style.maxHeight=Math.max(40,available-12-($('choice-search').hidden?0:$('choice-search').offsetHeight+5)-($('choice-hint').hidden?0:$('choice-hint').offsetHeight+4)-($('theme-favorite').hidden?0:$('theme-favorite').offsetHeight+4)-($('choice-families').hidden?0:$('choice-families').offsetHeight+4))+'px';
   popup.style.left=Math.max(8,Math.min(rect.left,innerWidth-popup.offsetWidth-8))+'px';
@@ -280,6 +391,7 @@ function drawChoices() {
   const choices=choiceOptions.filter(o=>o.label.toLowerCase().includes(query)&&(!choiceTheme||query||themeFamily==='all'||(themeFamily==='favorites'?(state.settings.theme_favorites||[]).includes(o.value):app.themeFamily(o.value)===themeFamily)));
   for(const option of choices) {
     const button=document.createElement('button');button.dataset.value=option.value;button.setAttribute('role','option');button.setAttribute('aria-selected',String(option.value===choiceValue));
+    if(choiceOrigin?.dataset.setting==='icon_style')button.appendChild(app.iconSample(option.value));
     if(choiceTheme){
       const theme=state.themes.find(t=>t.id===option.value),swatch=document.createElement('span');swatch.className='theme-swatch';swatch.setAttribute('aria-hidden','true');swatch.textContent='Aa';
       if(theme){swatch.style.background=theme.bg;swatch.style.color=theme.fg;swatch.style.borderColor=theme.rule;}button.appendChild(swatch);
@@ -330,9 +442,9 @@ const HELP = [
   'Files and the theme arrow sit beside the main menu. Find, Outline, Source, Edit and the document-map toggle sit on the right. The quiet controls brighten on hover or keyboard focus. Files shows or hides the file browser. Repeated clicks on Outline cycle through document headings, a hidden sidebar, and the file tree. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
  ]},
  {id:'tabs',title:'Files & tabs',paragraphs:[
-  'Right-click a file and choose Open in new tab, or middle-click it. An already-open file switches to its existing tab. New notes and files chosen from the Open dialog also get their own tabs.',
+  'Right-click a file and choose Open in new tab, or middle-click it. An already-open file switches to its existing tab. New notes and files chosen from the Open dialog also get their own tabs. You can select several files in that dialog. Recent files in the main menu provides a searchable history.',
   'A single document shows a quiet title in the app bar. Open another document to reveal tabs. Each tab keeps its draft, editing mode, selection and scroll position. Close a tab with its × button or Ctrl+W. Modified tabs ask you to Save, Discard or Cancel.',
-  'Right-click a tab to close it, keep only that tab, or copy its full path. Right-click a file or folder for path-copying and file-manager actions.'
+  'Drag a tab to reorder it, or focus it and use Ctrl+Shift+Left/Right. Right-click a tab to close it, keep only that tab, or copy its full path. Right-click a file or folder for path-copying and file-manager actions.'
  ]},
  {id:'editing',title:'Writing & saving',paragraphs:[
   'Edit document in the main menu, or Ctrl+E, switches between writing and reading. Save writes the current tab; Save a copy lets you choose another filename. A dot on a tab marks unsaved changes.',
@@ -341,9 +453,9 @@ const HELP = [
  ]},
  {id:'recovery',title:'Recovery & files',paragraphs:[
   'Unsaved drafts are journaled separately from your original files after a short interval. If the app stops unexpectedly, the next launch offers to restore them. Recovery is a fallback; keep using Save for important work.',
-  'Saved tabs and their positions reopen at startup when enabled in Options. Ctrl+Shift+T reopens the last closed tab. A Changed on disk notice offers Reload or Keep edits; saving still checks for conflicts.',
+  'Saved tabs reopen in their previous order, with the active file, editing position, image zoom and pan, and the workspace’s expanded folders, filter and tree position restored. Startup tab restoration can be changed in Options. Ctrl+Shift+T reopens the last closed tab. A Changed on disk notice offers Reload or Keep edits; saving still checks for conflicts.',
   'The optional status strip shows line, column, encoding and line endings. UTF-8 and marked UTF-16 files keep their format. Large files open as read-only previews of the first 256 KB; the threshold is in Options → Document.',
-  'The main menu can clear recent files or clean old app logs and marked release backups. Retention limits are in Options → Workspace. Unmarked folders and unrelated files are preserved. Options → Document also controls remote images.'
+  'The Recent files menu can clear its history; the main menu can clean old app logs and marked release backups. Retention limits are in Options → Workspace. Unmarked folders and unrelated files are preserved. Options → Document also controls remote images.'
  ]},
  {id:'images',title:'Images',paragraphs:[
   'Click a picture inside a Markdown document to inspect it with the same zoom and magnifier controls. Back to document or Escape returns to your reading position. Ctrl+click a linked picture to follow its link. Open a picture from Files, Open File or drag and drop. PNG, JPEG, GIF, WebP, BMP, ICO, SVG and AVIF files open inside the document area as view-only tabs. Files are limited to 32 MB; formats supported by the system browser are displayed.',
@@ -356,7 +468,7 @@ const HELP = [
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
   'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover bright colors and deeper shades, including amber, burgundy, plum, forest green and deep teal. Use the Bold, Soft and Classic filters to browse the collections. Favorite a theme in the menu to keep it in Favorites. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
-  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. Appearance also offers rounded or square tabs and a soft tint, underline or static glow for the active tab. Fonts sits directly below Appearance in Options. Its Files size setting enlarges file and folder names, filter text, and outline headings independently of the rest of the interface. Options keeps its size when you switch sections; drag its corner to resize it yourself. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
+  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. Appearance also offers rounded or square tabs and a soft tint, underline or static glow for the active tab. Appearance also offers ten icon treatments and an independent visibility slider; hover and keyboard focus keep controls clear. Fonts sits directly below Appearance in Options. Its Files size setting enlarges file and folder names, filter text, and outline headings independently of the rest of the interface. Options keeps its size when you switch sections; drag its corner to resize it yourself. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
@@ -393,7 +505,8 @@ app.options=open=>{closeChoices(false);closeMenu(false);if(open&&$('help-overlay
 function mainMenu(){showMenu($('b-menu'),[
  {label:state.name||'BS Notepad',brand:true,hint:'Help · F1',action:()=>app.help(true)},null,
  {label:'New note',icon:'note',hint:'Ctrl+N',action:()=>$('b-new').click()},
- {label:'Browse for a file…',icon:'open',hint:'Ctrl+O',action:()=>$('b-open').click()},
+ {label:'Open files…',icon:'open',hint:'Ctrl+O',action:()=>$('b-open').click()},
+ {label:'Recent files…',icon:'recent',action:()=>app.showRecents()},
  {label:'Choose a workspace folder…',icon:'workspace',action:()=>$('folder-open').click()},null,
  {label:'Save edits',icon:'save',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+S',action:()=>$('b-save').click()},
  {label:'Save a copy…',icon:'saveAs',disabled:!!state.readOnly||!!state.image,hint:'Ctrl+Shift+S',action:()=>$('b-saveas').click()},
@@ -404,7 +517,6 @@ function mainMenu(){showMenu($('b-menu'),[
  {label:state.settings.view_mode==='source'?'Rendered view':'Source view',disabled:!!state.image,icon:state.settings.view_mode==='source'?'rendered':'source',hint:'Ctrl+U',action:()=>$('b-view').click()},
  {label:'Document map',icon:'map',disabled:!!state.image,checked:!!state.settings.minimap,action:()=>$('b-map').click()},
  {label:'Wrap long lines',icon:'wrap',checked:!!state.settings.word_wrap,action:()=>send({cmd:'setting',key:'word_wrap',value:!state.settings.word_wrap})},
- {label:'Clear recent files',icon:'closeOthers',action:()=>send({cmd:'clearRecents'})},
  {label:'Clean old logs and backups',icon:'collapse',action:()=>send({cmd:'cleanHistory'})},
  {label:'Options…',icon:'options',hint:'Ctrl+,',action:()=>app.options(true)},null,
  {label:'Quit '+(state.name||'BS Notepad'),icon:'exit',hint:'Ctrl+Q',action:()=>send({cmd:'quit'})}
@@ -551,11 +663,14 @@ document.addEventListener('keydown',e=>{
  const ctrl=e.ctrlKey||e.metaKey;
  const popup=!$('menu-popup').hidden?$('menu-popup'):!$('choice-popup').hidden?$('choice-popup'):null;
  if(popup){
+   if(e.key==='Tab'&&popup.classList.contains('recent-menu')){e.preventDefault();const controls=[...popup.querySelectorAll('button:not(:disabled),input')],index=controls.indexOf(document.activeElement),next=index+(e.shiftKey?-1:1);if(next<0||next>=controls.length)closeMenu();else controls[next].focus();return;}
+   if(document.activeElement?.id==='recent-search'&&['Home','End'].includes(e.key))return;
    if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();popup===$('menu-popup')?closeMenu():closeChoices();return;}
    if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-     e.preventDefault();e.stopImmediatePropagation();const buttons=[...popup.querySelectorAll(popup.id==='choice-popup'?'#choice-list button:not(:disabled)':'button:not(:disabled)')],index=buttons.indexOf(document.activeElement);
-     const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;buttons[next]?.focus();return;
+     e.preventDefault();e.stopImmediatePropagation();const buttons=[...popup.querySelectorAll(popup.id==='choice-popup'?'#choice-list button:not(:disabled)':'[role^=menuitem]:not(:disabled)')],index=buttons.indexOf(document.activeElement);
+     const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:index<0?(e.key==='ArrowDown'?0:buttons.length-1):(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;buttons[next]?.focus();return;
    }
+   if(e.key==='Enter'&&document.activeElement?.id==='recent-search'){e.preventDefault();popup.querySelector('[role=menuitem]')?.click();return;}
    if(e.key==='Enter'&&document.activeElement===$('choice-search')){e.preventDefault();e.stopImmediatePropagation();$('choice-list').querySelector('button')?.click();return;}
    if(ctrl){e.stopImmediatePropagation();return;}
  }

@@ -4,6 +4,7 @@ use std::time::SystemTime;
 #[derive(Clone)]
 pub struct Document {
     pub image: Option<crate::storage::ImageInfo>,
+    pub image_view: Option<crate::settings::ImageView>,
     pub recovery_key: String,
     pub format: crate::storage::TextFormat,
     pub fingerprint: Option<u64>,
@@ -31,6 +32,7 @@ impl Document {
         let source = crate::storage::normalize(&source);
         Self {
             image: None,
+            image_view: None,
             recovery_key: crate::recovery::key(),
             format,
             fingerprint,
@@ -127,6 +129,25 @@ impl Documents {
         self.next_id += 1;
         self.tabs[self.active] = document;
     }
+    pub fn move_before(&mut self, id: u64, before: Option<u64>) -> bool {
+        if before == Some(id)
+            || before.is_some_and(|target| !self.tabs.iter().any(|doc| doc.id == target))
+        {
+            return false;
+        }
+        let Some(index) = self.tabs.iter().position(|doc| doc.id == id) else {
+            return false;
+        };
+        let active = self.current().id;
+        let doc = self.tabs.remove(index);
+        let destination = before
+            .and_then(|target| self.tabs.iter().position(|doc| doc.id == target))
+            .unwrap_or(self.tabs.len());
+        self.tabs.insert(destination, doc);
+        self.active = self.tabs.iter().position(|doc| doc.id == active).unwrap();
+        true
+    }
+
     // The caller must resolve unsaved changes before removing a document.
     pub fn remove(&mut self, id: u64) {
         if let Some(index) = self.tabs.iter().position(|d| d.id == id) {

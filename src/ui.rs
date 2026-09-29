@@ -5,7 +5,7 @@ pub const SHELL: &str = r##"<!doctype html><html lang="en"><head><meta name="vie
  --bg:#1f1f1f; --fg:#d7d7d7; --panel:#181818; --bar:#252526;
  --rule:#343434; --link:#75beff; --dim:#a5a5a5; --accent:#3794ff;
  --ui-font:system-ui,sans-serif; --body-font:system-ui,sans-serif; --code-font:ui-monospace,monospace;
- --ui-size:13px; --files-size:16px; --body-size:16px; --code-size:14px; --line:1.65; --side-w:260px; --zoom:1;
+ --icon-opacity:.35; --ui-size:13px; --files-size:16px; --body-size:16px; --code-size:14px; --line:1.65; --side-w:260px; --zoom:1;
  --hover:color-mix(in srgb,var(--fg) 7%,transparent);
  --selected:color-mix(in srgb,var(--accent) 18%,var(--panel));
 }
@@ -56,7 +56,7 @@ body.autoside #side.show,body.autoside #side:focus-within { transform:none; }
 #explorer-head strong { font-size:12px; font-weight:400; color:color-mix(in srgb,var(--dim) 80%,var(--panel)); flex:1; }
 .explorer-action { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; padding:5px; background:transparent; color:var(--dim); border:0; border-radius:4px; }
 .explorer-action:hover { color:var(--fg); background:var(--hover); }
-#explorer-head .explorer-action { opacity:.5; transition:opacity .12s ease; }
+#explorer-head .explorer-action { opacity:max(.5,var(--icon-opacity,.35)); transition:opacity .12s ease; }
 #explorer-head .explorer-action:hover,#explorer-head .explorer-action:focus-visible { opacity:1; color:var(--fg); }
 #sidepin.on { color:var(--dim); background:var(--hover); }
 #file-tools { padding:10px 12px 6px; }
@@ -256,7 +256,7 @@ body.maximized #resize-edges { display:none; }
 .popup .menu-brand .menu-hint { font-weight:400; }
 
 #bar #document-actions { flex:0 0 auto; margin-left:0; padding:0; border:0; gap:1px; }
-#bar #document-actions button { width:28px; min-height:28px; padding:5px; opacity:.35; background:transparent; border-color:transparent; color:var(--dim); }
+#bar #document-actions button { width:28px; min-height:28px; padding:5px; opacity:var(--icon-opacity,.35); background:transparent; border-color:transparent; color:var(--dim); }
 #bar #document-actions button:hover,#bar #document-actions button:focus-visible { opacity:.95; background:var(--hover); }
 #bar #document-actions .button-label { display:none; }
 
@@ -265,7 +265,7 @@ body.maximized #resize-edges { display:none; }
 #bar #document-actions button.quiet-control,
 #bar #window-controls button.quiet-control {
   width:28px; min-width:28px; min-height:28px; padding:5px;
-  opacity:.35; color:var(--dim); background:transparent; border:1px solid transparent;
+  opacity:var(--icon-opacity,.35); color:var(--toolbar-icon-color,var(--dim)); background:var(--toolbar-icon-bg,transparent); border:1px solid transparent;
   box-shadow:none; transition:opacity .12s ease;
 }
 #bar button.quiet-control .ui-icon { stroke-width:1.5; }
@@ -438,6 +438,62 @@ body.resizing-sidebar #side { transition:none; }
 #pane-outline .outline-symbol { font-size:.75em; }
 #tree-filter { font-size:var(--files-size); line-height:1.4; height:auto; min-height:calc(var(--files-size) * 1.4 + 10px); padding-left:calc(clamp(13px,calc(var(--files-size) * .8),24px) + 16px); }
 #filter-wrap>.ui-icon { width:clamp(13px,calc(var(--files-size) * .8),24px); height:clamp(13px,calc(var(--files-size) * .8),24px); }
+/* These treatments reuse the application's original vector drawings. */
+#bar #b-side { --icon-ink:color-mix(in srgb,#279bc3 75%,var(--fg)); }
+#bar #b-find { --icon-ink:color-mix(in srgb,#b08a38 75%,var(--fg)); }
+#bar #b-outline { --icon-ink:color-mix(in srgb,#a479c9 75%,var(--fg)); }
+#bar #b-view { --icon-ink:color-mix(in srgb,#479cb4 75%,var(--fg)); }
+#bar #b-edit { --icon-ink:color-mix(in srgb,#619b60 75%,var(--fg)); }
+#bar #b-map,#bar #b-theme { --icon-ink:color-mix(in srgb,#a77a8b 75%,var(--fg)); }
+.icon-treatment { display:inline-flex; align-items:center; gap:3px; flex:0 0 auto; color:var(--dim); }
+.icon-treatment .icon-sample { display:inline-flex; align-items:center; justify-content:center; width:21px; height:23px; border-radius:4px; }
+.select-control>.icon-treatment .icon-sample:nth-child(n+2) { display:none; }
+.icon-treatment svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+:root[data-icon-style="crisp"] #bar .ui-icon,.icon-treatment[data-icon-style="crisp"] svg { stroke-width:1.8; stroke-linejoin:miter; }
+:root[data-icon-style="fine"] #bar .ui-icon,.icon-treatment[data-icon-style="fine"] svg { stroke-width:1.1; }
+:root[data-icon-style="bold"] #bar .ui-icon,.icon-treatment[data-icon-style="bold"] svg { stroke-width:2.4; }
+:root[data-icon-style="square"] #bar .ui-icon,.icon-treatment[data-icon-style="square"] svg { stroke-width:1.7; stroke-linecap:square; stroke-linejoin:miter; }
+:root[data-icon-style="square"] #bar .ui-icon rect,.icon-treatment[data-icon-style="square"] svg rect { rx:0; ry:0; }
+:root[data-icon-style="rounded"] #bar .ui-icon,.icon-treatment[data-icon-style="rounded"] svg { stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+:root[data-icon-style="rounded"] #bar .ui-icon rect,.icon-treatment[data-icon-style="rounded"] svg rect { rx:4; ry:4; }
+:root[data-icon-style="contrast"] #bar { --toolbar-icon-color:var(--fg); }
+:root[data-icon-style="contrast"] #bar .ui-icon,.icon-treatment[data-icon-style="contrast"] svg { stroke-width:2.2; }
+.icon-treatment[data-icon-style="contrast"] { color:var(--fg); }
+:root[data-icon-style="duotone"] #bar { --toolbar-icon-color:var(--fg); --toolbar-icon-bg:color-mix(in srgb,var(--accent) 10%,transparent); }
+:root[data-icon-style="duotone"] #bar .ui-icon :is(rect,circle),.icon-treatment[data-icon-style="duotone"] svg :is(rect,circle) { fill:color-mix(in srgb,var(--accent) 22%,transparent); }
+.icon-treatment[data-icon-style="duotone"] { color:var(--fg); }
+.icon-treatment[data-icon-style="duotone"] .icon-sample { background:color-mix(in srgb,var(--accent) 10%,transparent); }
+:root:is([data-icon-style="color"],[data-icon-style="pastel"]) #bar button.quiet-control { --toolbar-icon-color:var(--icon-ink,var(--accent)); }
+:root[data-icon-style="pastel"] #bar button.quiet-control { --toolbar-icon-bg:color-mix(in srgb,var(--icon-ink,var(--accent)) 15%,var(--bg)); border-radius:6px; }
+.icon-treatment:is([data-icon-style="color"],[data-icon-style="pastel"]) .icon-sample { color:var(--icon-ink); }
+.icon-treatment[data-icon-style="pastel"] .icon-sample { background:color-mix(in srgb,var(--icon-ink) 15%,var(--bg)); }
+.icon-treatment .icon-sample:nth-child(1) { --icon-ink:color-mix(in srgb,#279bc3 75%,var(--fg)); }
+.icon-treatment .icon-sample:nth-child(2) { --icon-ink:color-mix(in srgb,#619b60 75%,var(--fg)); }
+.icon-treatment .icon-sample:nth-child(3) { --icon-ink:color-mix(in srgb,#a479c9 75%,var(--fg)); }
+#choice-list button .icon-treatment { margin-right:5px; }
+/* Recent history is a transient menu, not another permanent sidebar row. */
+#menu-popup.recent-menu { display:flex; flex-direction:column; width:min(440px,calc(100vw - 16px)); overflow:hidden; padding:8px; }
+.recent-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 7px 7px; }
+.recent-header strong { font-size:14px; font-weight:600; }
+#menu-popup .recent-clear { width:auto; min-height:26px; padding:3px 8px; font-size:12px; color:var(--dim); }
+#recent-search { flex:0 0 auto; width:100%; min-width:0; background:var(--bg); color:var(--fg); border:1px solid var(--rule); border-radius:5px; padding:8px 10px; margin:0 0 6px; font:inherit; }
+.recent-list { min-height:0; overflow:auto; scrollbar-width:thin; scrollbar-color:var(--rule) transparent; }
+#menu-popup .recent-entry { display:flex; align-items:center; width:100%; gap:11px; padding:9px; text-align:left; }
+.recent-entry .file-icon { flex:0 0 clamp(20px,var(--files-size),32px); width:clamp(20px,var(--files-size),32px); height:clamp(20px,var(--files-size),32px); }
+.recent-entry .file-icon svg { width:100%; height:100%; }
+.recent-text { display:flex; flex-direction:column; min-width:0; flex:1; }
+.recent-name { font-size:var(--files-size); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.recent-folder { font-size:clamp(12px,calc(var(--files-size) * .75),32px); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.recent-open { font-size:clamp(11px,calc(var(--files-size) * .65),24px); color:var(--dim); }
+.recent-empty { color:var(--dim); padding:12px 8px; font-size:13px; }
+.document-tab { position:relative; }
+.tab-label { touch-action:none; user-select:none; }
+.document-tab.tab-dragging { opacity:.6; }
+.document-tab.tab-drop-before::before { content:""; position:absolute; inset:2px auto 2px -3px; width:2px; background:var(--accent); border-radius:2px; }
+.document-tab.tab-drop-after::after { content:""; position:absolute; inset:2px -3px 2px auto; width:2px; background:var(--accent); border-radius:2px; }
+#document-tabs.tab-drop-end { box-shadow:inset -2px 0 var(--accent); }
+body.tab-reordering,body.tab-reordering * { cursor:grabbing!important; user-select:none!important; }
+
 </style></head><body>
 
 <div id="hot"></div>
@@ -569,6 +625,7 @@ const send = o => {
  const fromTab=o.fromTab??state.activeTab,editor=fromTab===state.activeTab?$("text"):editorNodes.get(fromTab),doc=$("doc");
  const view={editorScroll:editor?.scrollTop||0,selectionStart:editor?.selectionStart||0,selectionEnd:editor?.selectionEnd||0};
  if(fromTab===state.activeTab){view.editing=state.editing;view.scroll=state.embeddedImage?.tab===fromTab?state.embeddedImage.fraction:doc.scrollTop/(doc.scrollHeight||1);}
+ const imageView=window.app?.captureImageView?.(fromTab);if(imageView)view.imageView=imageView;
  window.postNative({...o,fromTab,view});
 };
 const ICONS = {"edit": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4\"/></svg>", "preview": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "source": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>", "chevron": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\"/></svg>"};
@@ -669,7 +726,7 @@ let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"
 // Grouped so each screen is short. Remembered state - window size, last file,
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
-  Appearance: ["theme", "text_contrast", "tab_shape", "tab_highlight", "chrome", "zoom"],
+  Appearance: ["theme", "text_contrast", "tab_shape", "tab_highlight", "icon_style", "icon_visibility", "chrome", "zoom"],
   Fonts: ["ui_font", "body_font", "code_font", "ui_size", "files_size", "body_size",
           "code_size", "line_height", "ligatures"],
   Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
@@ -684,12 +741,16 @@ const CHOICES = {
   sidebar_tab: ["files", "outline"],
   tab_shape: ["rounded", "square"],
   tab_highlight: ["soft", "line", "glow"],
+  icon_style: ["soft", "crisp", "fine", "bold", "square", "rounded", "duotone", "color", "pastel", "contrast"],
 };
+const ICON_STYLE_LABELS = {soft:"Soft outline",crisp:"Crisp outline",fine:"Fine line",bold:"Bold line",square:"Square line",rounded:"Rounded line",duotone:"Duotone",color:"Color outline",pastel:"Pastel tiles",contrast:"High contrast"};
 const LABELS = {
  status_bar:["Document status","Show line, column, encoding and line endings."],
  remote_images:["Remote images","Load pictures hosted on websites in documents."],
  minimap:["Document map","A small scrollable overview beside the document. Toggle it from the toolbar."],
  text_contrast:["Text contrast","Strengthen text without changing the background."],
+ icon_style:["Toolbar icons","Choose a line weight or color treatment."],
+ icon_visibility:["Icon visibility","Dim or brighten toolbar icons. Hover and focus stay clear."],
  tab_shape:["Tab shape","Rounded corners or straight edges."],
  tab_highlight:["Active tab","A quiet accent for the document you are using."],
  theme:["Color theme","Preview any palette; click a choice to save it."],
@@ -713,7 +774,7 @@ const LABELS = {
  highlight_limit_kb:["Highlight limit","Skip syntax highlighting above this size in KB."],
  plain_text_above_mb:["Large-file preview threshold","Above this size in MB, open a read-only preview of the first 256 KB. Maximum editable file size is 32 MB."]
 };
-const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], ui_size:[10,28,1], files_size:[12,48,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
+const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], icon_visibility:[20,100,5], ui_size:[10,28,1], files_size:[12,48,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
 const choiceLabel = x => ({rounded:"Rounded",square:"Square",soft:"Soft tint",line:"Underline",glow:"Soft glow",always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
@@ -748,6 +809,7 @@ const app = {
   applySettings(s) {
     if (!["files", "outline"].includes(s.sidebar_tab)) s = {...s, sidebar_tab:"files"};
     state.settings = s;
+    const filesWereVisible = $("pane-files").clientHeight > 0;
     const r = document.documentElement.style;
     r.setProperty("--ui-font", s.ui_font); r.setProperty("--body-font", s.body_font);
     r.setProperty("--code-font", s.code_font);
@@ -762,6 +824,8 @@ const app = {
     $("sidehot").hidden = s.sidebar !== "auto";
     r.setProperty("--zoom", s.zoom);
     document.body.style.fontVariantLigatures = s.ligatures ? "normal" : "none";
+    document.documentElement.dataset.iconStyle = s.icon_style || "soft";
+    r.setProperty("--icon-opacity", (s.icon_visibility ?? 35) / 100);
     document.documentElement.dataset.tabShape = s.tab_shape || "rounded";
     document.documentElement.dataset.tabHighlight = s.tab_highlight || "soft";
     $("side").classList.toggle("hidden", s.sidebar === "off");
@@ -793,6 +857,7 @@ const app = {
     for (const p of ["files","outline"])
       $("pane-" + p).classList.toggle("on", p === s.sidebar_tab);
     for (const id of ["folder-tools","file-tools"]) $(id).style.display = s.sidebar_tab === "files" ? "" : "none";
+    if (!filesWereVisible && s.sidebar_tab === "files" && s.sidebar !== "off" && state.treeScroll !== undefined) requestAnimationFrame(()=>{ if (!state.restoringTree) $("pane-files").scrollTop=state.treeScroll; });
     if ($("options").classList.contains("show")) app.drawOptions();
   },
   setDocument(d) {
@@ -862,14 +927,16 @@ const app = {
     $("folder-up").disabled = !d.parent;
     const entries = app.entries(d.entries || [], previous);
     if (!previous) pane.replaceChildren(entries);
+    if (!previous) app.restoreTreeSession?.(d.view);
     app.filterTree();
     if (previous) {
       app.restoreTreeView(view);
       // Refresh loaded branches in place; keep their children visible while loading.
       for (const row of pane.querySelectorAll('.dir[aria-expanded="true"]')) app.requestFolder(row);
-    } else {
-      pane.scrollTop = 0;
+    } else if (!state.restoringTree) {
+      pane.scrollTop = state.treeScroll || 0;
     }
+    app.continueTreeRestore?.();
   },
   entries(list, previous) {
     const box = previous || document.createElement("div");
@@ -884,6 +951,7 @@ const app = {
         if (e.dir) {
           el.setAttribute("aria-expanded", "false");
           el.onclick = () => {
+            state.restoringTree = null;
             const open = el.getAttribute("aria-expanded") === "true";
             el.setAttribute("aria-expanded", String(!open));
             fillFileRow(el,el.dataset.name,true,!open);
@@ -893,6 +961,7 @@ const app = {
               for (const row of branch.querySelectorAll('.kids .dir')) pendingFolders.delete(row.dataset.path);
               branch.querySelector(":scope > .kids")?.remove();
             } else app.requestFolder(el);
+            app.saveTreeState?.(true);
           };
         } else {
           el.onclick = () => send({ cmd:"openPath", path:el.dataset.path });
@@ -910,7 +979,7 @@ const app = {
     // Avoid detaching unchanged rows so focus and nested expansion survive refresh.
     branches.forEach((branch,index)=>{if(box.children[index]!==branch)box.insertBefore(branch,box.children[index] || null);});
     const keep = new Set(branches);
-    for (const node of [...box.children]) if (!keep.has(node)) node.remove();
+    for (const node of [...box.childNodes]) if (!keep.has(node)) node.remove();
     if (!branches.length) { const empty = document.createElement("div"); empty.className="tree-message"; empty.innerHTML="<strong>No files here</strong>Open another folder or create a new note."; box.appendChild(empty); }
     return box;
   },
@@ -925,6 +994,8 @@ const app = {
     if (!previous) pending.branch.appendChild(kids);
     app.filterTree();
     app.restoreTreeView(view, pending.el);
+    app.continueTreeRestore?.();
+    app.saveTreeState?.();
   },
   filterTree() {
     const query = $("tree-filter").value.toLowerCase();
@@ -944,7 +1015,7 @@ const app = {
     const root = $("pane-files").firstElementChild;
     if (root) visit(root);
   },
-  setRecents(list) { state.recents = list; },
+  setRecents(list) { state.recents = list; if (!$("menu-popup").hidden && $("menu-popup").classList.contains("recent-menu")) app.drawRecents?.(); },
   addCopyButtons() {
     for (const pre of document.querySelectorAll("#article pre")) {
       if(pre.querySelector(":scope > .copy"))continue;
@@ -1052,10 +1123,10 @@ const app = {
       const name=document.createElement("span");name.className="selected-label theme-name";name.textContent=current?.name || value;
       const arrow=document.createElement("span");arrow.className="select-arrow";arrow.textContent="▾";arrow.setAttribute("aria-hidden","true");
       control.append(swatch,name,arrow);control.onclick=()=>app.chooseTheme(control);
-    } else if (key === "text_contrast") {
+    } else if (key === "text_contrast" || key === "icon_visibility") {
       control = document.createElement("div"); control.className = "contrast-control";
       const slider = document.createElement("input"); slider.type = "range";
-      slider.min = 0; slider.max = 100; slider.step = 5; slider.value = value;
+      slider.min = key === "icon_visibility" ? 20 : 0; slider.max = 100; slider.step = 5; slider.value = value;
       slider.setAttribute("aria-labelledby", label.id);
       const output = document.createElement("output"); output.textContent = value + "%";
       slider.oninput = () => { output.textContent = slider.value + "%"; };
@@ -1068,7 +1139,7 @@ const app = {
       input.onchange=()=>{if(input.value&&input.checkValidity())app.setZoom(Number(input.value)/100);};
       const suffix=document.createElement("span");suffix.textContent="%";suffix.setAttribute("aria-hidden","true");control.append(input,suffix);
     } else if (CHOICES[key]) {
-      control = app.selectControl(CHOICES[key].map(choice => ({value:choice,label:choiceLabel(choice)})),value,
+      control = app.selectControl(CHOICES[key].map(choice => ({value:choice,label:key === "icon_style" ? ICON_STYLE_LABELS[choice] : choiceLabel(choice)})),value,
         next => send({cmd:"setting",key,value:next}), LABELS[key]?.[0] || key);
     } else if (key.endsWith("_font")) {
       const list = state.fonts.filter(f => key !== "code_font" || f.monospace);
@@ -1089,6 +1160,7 @@ const app = {
       control.type = "text";
       control.value = value;
     }
+    if (key === "icon_style") control.prepend(app.iconSample(value));
     control.setAttribute("aria-labelledby", label.id);
     control.setAttribute("aria-describedby", help.id);
     control.dataset.setting = key;
@@ -1106,7 +1178,7 @@ const app = {
     const reset = document.createElement("button");
     reset.className = "rst";
     reset.textContent = "\u21ba";
-    reset.title = "Reset " + (LABELS[key]?.[0] || key) + " to " + (key === "zoom" ? Math.round(fallback*100) + "%" : choiceLabel(String(fallback)));
+    reset.title = "Reset " + (LABELS[key]?.[0] || key) + " to " + (key === "zoom" ? Math.round(fallback*100) + "%" : key === "icon_style" ? ICON_STYLE_LABELS[fallback] : choiceLabel(String(fallback)));
     reset.setAttribute("aria-label", reset.title);
     reset.onclick = () => key === "theme" ? app.commitTheme(fallback) : key === "zoom" ? app.setZoom(fallback) : send({ cmd:"setting", key, value:fallback });
     row.appendChild(reset);
@@ -1137,12 +1209,14 @@ $("folder-new").onclick = () => $("b-new").click();
 $("folder-open").onclick = () => send({cmd:"openFolder"});
 $("folder-refresh").onclick = () => send({cmd:"refreshTree"});
 $("folder-up").onclick = () => send({cmd:"treeUp"});
-$("tree-filter").oninput = () => app.filterTree();
+$("tree-filter").oninput = () => { state.restoringTree=null; app.filterTree(); app.saveTreeState?.(false,false); };
 $("folder-collapse").onclick = () => {
+  state.restoringTree=null;
   pendingFolders.clear();
   for(const row of $("pane-files").querySelectorAll('.dir[aria-expanded="true"]')) { row.setAttribute('aria-expanded','false');fillFileRow(row,row.dataset.name,true); }
   for(const group of [...$("pane-files").querySelectorAll('.kids')]) group.remove();
   app.filterTree();
+  app.saveTreeState?.(true);
 };
 $("pane-files").onkeydown = e => {
   const row=e.target.closest('.item'); if(!row) return;

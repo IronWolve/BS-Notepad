@@ -1,7 +1,9 @@
-// Images stay in the document workspace. Only their view state is kept between tabs.
+// Images stay in the document workspace; view state follows tabs and saved sessions.
 const imageViews=new Map();let imageContext=null,imagePan=null;
 const imageBytes=bytes=>bytes>=1048576?(bytes/1048576).toFixed(1)+' MB':bytes>=1024?Math.round(bytes/1024)+' KB':bytes+' B';
-function rememberImage(){if(imageContext&&!imageContext.info.embedded)imageViews.set(imageContext.tab,{scale:imageContext.scale,fit:imageContext.fit,loupe:imageContext.loupe,left:$('image-viewport').scrollLeft,top:$('image-viewport').scrollTop});}
+function rememberImage(){if(imageContext&&!imageContext.info.embedded){imageViews.set(imageContext.tab,{scale:imageContext.scale,fit:imageContext.fit,loupe:imageContext.loupe,left:$('image-viewport').scrollLeft,top:$('image-viewport').scrollTop});if(imageContext.loaded&&state.activeTab===imageContext.tab&&!state.renderPending)send({cmd:'viewState'});}}
+app.captureImageView=tab=>imageViews.get(tab)||null;
+app.restoreImageView=(tab,view)=>{if(view&&!imageViews.has(tab)&&Number.isFinite(view.scale))imageViews.set(tab,{scale:Math.max(.01,Math.min(8,view.scale)),fit:!!view.fit,loupe:!!view.loupe,left:Math.max(0,view.left||0),top:Math.max(0,view.top||0)});};
 function hideLens(){$('image-lens').hidden=true;}
 app.pruneImages=live=>{for(const id of imageViews.keys())if(!live.has(id))imageViews.delete(id);if(imageContext&&!live.has(imageContext.tab)){imageContext=null;hideLens();}};
 app.imageStatus=()=>{

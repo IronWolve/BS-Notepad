@@ -13,11 +13,11 @@ Read a document, switch to its source, and edit it in the same window. BS Notepa
 ## What it does
 
 - **Read and write.** Rendered Markdown, syntax-colored source, an editor, and a reading column that adapts to wide tables and code.
-- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. The Outline toolbar button cycles through document headings, a hidden sidebar, and the file tree. Right-click or middle-click a file to open it in a tab.
-- **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast, choose rounded or square tabs with a quiet active-tab accent, and set separate interface, reading, and code fonts. Options → Fonts also has an independent Files size setting (12–48 px) for the file tree and outline.
+- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. The Outline toolbar button cycles through document headings, a hidden sidebar, and the file tree. Select several files in the Open dialog, or right-click or middle-click a file to open it in a tab. Drag tabs to reorder them; Recent files is available in the main menu.
+- **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast, choose rounded or square tabs with a quiet active-tab accent, and set separate interface, reading, and code fonts. Appearance includes ten toolbar icon treatments and an icon visibility slider; the soft outline style remains the default. Options → Fonts also has an independent Files size setting (12–48 px) for the file tree and outline.
 - **Find your place.** Toggle Find, match case or whole words, replace text, jump to a line, and navigate with the optional document map.
 - **Look closer.** Images open inside the workspace with fit, actual size, zoom, pan, and a magnifying lens. Click a picture in Markdown to inspect it, then return to your reading position.
-- **Return to your work.** Restore tabs and positions, reopen a closed tab, and recover unsaved drafts after an interrupted session. Saving checks for changes made on disk.
+- **Return to your work.** Restore tab order, the active file, viewing positions, and expanded folders; reopen a closed tab and recover unsaved drafts after an interrupted session. Saving checks for changes made on disk.
 
 ### Your colors
 
@@ -61,6 +61,7 @@ On macOS, use **Command** in place of **Ctrl** for the commands below.
 | Show / hide files | Ctrl+B |
 | Close / reopen tab | Ctrl+W / Ctrl+Shift+T |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab |
+| Move tab left / right | Ctrl+Shift+Left / Ctrl+Shift+Right |
 | Zoom | Ctrl+wheel or Ctrl+Plus / Ctrl+Minus |
 | Reset zoom | Ctrl+0 |
 | Options / help | Ctrl+, / F1 |
@@ -71,7 +72,7 @@ With the image canvas focused, **F** fits the picture and **M** toggles the magn
 
 Your notes remain ordinary files in the folders you choose. On Windows and Linux, app settings, recovery drafts, and logs live beside the executable. On macOS, they live in `bs-notepad-data` beside the app bundle. Keep that data when moving your installation, and keep it out of shared source archives.
 
-Remote images in Markdown can make network requests; disable them in **Options → Document** if you want to prevent those image requests. Recent files and restored tabs can contain local paths. **Clear recent files** is available in the main menu. Recovery drafts are a fallback, not a substitute for saving or keeping backups.
+Remote images in Markdown can make network requests; disable them in **Options → Document** if you want to prevent those image requests. Recent files and restored tabs can contain local paths. The **Recent files** menu includes a **Clear** action. Recovery drafts are a fallback, not a substitute for saving or keeping backups.
 
 Images are view-only and limited to 32 MB. PNG, JPEG, GIF, WebP, BMP, ICO, SVG, and AVIF are recognized; decoding depends on the platform's webview. Large text files use a read-only preview of the first 256 KB once they exceed the configured threshold. UTF-8 and BOM-marked UTF-16 files retain their encoding and line endings when saved.
 
