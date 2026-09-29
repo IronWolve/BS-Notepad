@@ -47,6 +47,18 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
             }
         }
     }
+    let app = format!("{}.exe", env!("CARGO_PKG_NAME"));
+    let held = format!("in-use-{}", app);
+    let allowed = [
+        app.as_str(),
+        held.as_str(),
+        "notepad.exe",
+        "in-use-notepad.exe",
+        "WebView2Loader.dll",
+        "installed.json",
+        "register-file-types.ps1",
+        ".release-backup",
+    ];
     let mut archives = Vec::new();
     for entry in std::fs::read_dir(root)?.flatten() {
         let kind = match entry.file_type() {
@@ -69,6 +81,24 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
             .as_deref()
             == Some(env!("CARGO_PKG_NAME"))
         {
+            let contents = match std::fs::read_dir(entry.path())
+                .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+            {
+                Ok(contents) => contents,
+                Err(_) => {
+                    failed += 1;
+                    continue;
+                }
+            };
+            // Unrecognized folders are preserved and never consume a retained-backup slot.
+            if contents.iter().any(|item| {
+                !allowed.contains(&item.file_name().to_string_lossy().as_ref())
+                    || !item
+                        .file_type()
+                        .is_ok_and(|kind| kind.is_file() && !kind.is_symlink())
+            }) {
+                continue;
+            }
             let modified = entry
                 .metadata()
                 .and_then(|m| m.modified())
@@ -79,18 +109,6 @@ pub fn cleanup(root: &Path, days: u32, keep: u32) -> std::io::Result<(usize, usi
     archives.sort();
     archives.reverse();
     for (_, archive) in archives.into_iter().skip(keep.max(1) as usize) {
-        let app = format!("{}.exe", env!("CARGO_PKG_NAME"));
-        let held = format!("in-use-{}", app);
-        let allowed = [
-            app.as_str(),
-            held.as_str(),
-            "notepad.exe",
-            "in-use-notepad.exe",
-            "WebView2Loader.dll",
-            "installed.json",
-            "register-file-types.ps1",
-            ".release-backup",
-        ];
         let entries: Vec<_> = match std::fs::read_dir(&archive)
             .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
         {
