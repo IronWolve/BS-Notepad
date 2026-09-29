@@ -227,7 +227,6 @@ function fileMenu(event,row) {
     {label:row.getAttribute('aria-expanded')==='true'?'Fold this folder':'Expand this folder',icon:row.getAttribute('aria-expanded')==='true'?'collapse':'open',action:()=>row.click()},
     {label:'Browse from this folder',icon:'workspace',action:()=>send({cmd:'workspacePath',path})}
   ]:[
-    {label:'Open here',icon:'enter',action:()=>send({cmd:'openPath',path})},
     {label:'Open in new tab',icon:'newTab',action:()=>send({cmd:'openPath',path,newTab:true})}
   ];
   entries.push(null,
