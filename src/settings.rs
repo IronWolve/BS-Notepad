@@ -42,6 +42,7 @@ pub struct Settings {
     pub body_font: String,
     pub code_font: String,
     pub ui_size: u32,
+    pub files_size: u32,
     pub body_size: u32,
     pub code_size: u32,
     pub line_height: f32,
@@ -99,6 +100,7 @@ impl Default for Settings {
             body_font: "system-ui, -apple-system, Segoe UI, sans-serif".into(),
             code_font: "ui-monospace, Consolas, monospace".into(),
             ui_size: 13,
+            files_size: 16,
             body_size: 16,
             code_size: 14,
             line_height: 1.65,
@@ -192,6 +194,7 @@ impl Settings {
             self.tab_highlight = "soft".into();
         }
         self.ui_size = self.ui_size.clamp(10, 28);
+        self.files_size = self.files_size.clamp(12, 48);
         self.body_size = self.body_size.clamp(10, 48);
         self.code_size = self.code_size.clamp(10, 40);
         self.line_height = self.line_height.clamp(1.0, 2.5);

@@ -357,7 +357,7 @@ const HELP = [
  ]},
  {id:'appearance',title:'Appearance',paragraphs:[
   'Hover over a theme in the toolbar menu to preview it. Moving away keeps the preview; click a theme to save it. You can also choose a theme in Options → Appearance. Bold themes cover bright colors and deeper shades, including amber, burgundy, plum, forest green and deep teal. Use the Bold, Soft and Classic filters to browse the collections. Favorite a theme in the menu to keep it in Favorites. Search looks through every collection. Text contrast in Options strengthens lettering without changing backgrounds or the quiet toolbar.',
-  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. Appearance also offers rounded or square tabs and a soft tint, underline or static glow for the active tab. Fonts sits directly below Appearance in Options. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
+  'Markdown uses a gently offset reading column. Wide tables, code and images use more of the available width and move the column toward the left. Appearance also offers rounded or square tabs and a soft tint, underline or static glow for the active tab. Fonts sits directly below Appearance in Options. Its Files size setting enlarges file and folder names, filter text, and outline headings independently of the rest of the interface. Options keeps its size when you switch sections; drag its corner to resize it yourself. The font pickers list installed families. Interface, reading and code fonts are independent. Dropdown choices use the selected app colors and include search for longer lists.',
   'Drag the blank space in the app bar to move the window. Double-click it to maximize or restore. The outer edges resize the window.'
  ]},
  {id:'shortcuts',title:'Keyboard shortcuts',shortcuts:[
@@ -542,8 +542,7 @@ function fitDialog(panel,content){
   const needed=Math.min(available,Math.max(minimum,chrome+Math.max(dialogContentHeight(content),dialogContentHeight(rail))+2));
   if(Math.abs(needed-current)>1)panel.style.height=needed+'px';
 }
-app.scheduleDialogFit=()=>{cancelAnimationFrame(dialogFrame);dialogFrame=requestAnimationFrame(()=>{fitDialog($('panel'),$('sets'));fitDialog($('help-panel'),$('help-content'));});};
-const originalDrawOptions=app.drawOptions;app.drawOptions=()=>{originalDrawOptions();app.scheduleDialogFit();};
+app.scheduleDialogFit=()=>{cancelAnimationFrame(dialogFrame);dialogFrame=requestAnimationFrame(()=>fitDialog($('help-panel'),$('help-content')));};
 window.addEventListener('resize',()=>{app.fitTitle();app.scheduleReaderLayout();app.scheduleDialogFit();});
 document.fonts?.ready.then(()=>app.scheduleReaderLayout());
 

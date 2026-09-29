@@ -5,7 +5,7 @@ pub const SHELL: &str = r##"<!doctype html><html lang="en"><head><meta name="vie
  --bg:#1f1f1f; --fg:#d7d7d7; --panel:#181818; --bar:#252526;
  --rule:#343434; --link:#75beff; --dim:#a5a5a5; --accent:#3794ff;
  --ui-font:system-ui,sans-serif; --body-font:system-ui,sans-serif; --code-font:ui-monospace,monospace;
- --ui-size:13px; --body-size:16px; --code-size:14px; --line:1.65; --side-w:260px; --zoom:1;
+ --ui-size:13px; --files-size:16px; --body-size:16px; --code-size:14px; --line:1.65; --side-w:260px; --zoom:1;
  --hover:color-mix(in srgb,var(--fg) 7%,transparent);
  --selected:color-mix(in srgb,var(--accent) 18%,var(--panel));
 }
@@ -424,6 +424,20 @@ body.resizing-sidebar #side { transition:none; }
   #sets[data-group="Appearance"] .sub { display:none; }
   #sets[data-group="Appearance"] .tab-preview { padding-top:5px; }
 }
+/* Sidebar reading size is independent of toolbar, options and document text. */
+#pane-files .item,#pane-outline .item { font-size:var(--files-size); line-height:1.4; min-height:max(28px,calc(var(--files-size) * 1.4 + 8px)); padding-top:4px; padding-bottom:4px; }
+#pane-files .tree-message { font-size:var(--files-size); }
+#folder-tools { font-size:var(--files-size); }
+#folder-path { font-size:inherit; line-height:1.4; min-width:0; }
+#folder-tools .root-chevron { font-size:12px; flex:0 0 12px; }
+#folder-tools .explorer-action { flex-shrink:0; }
+#pane-files .file-icon,#root-icon .file-icon { width:clamp(16px,1em,32px); height:clamp(16px,1em,32px); flex-basis:clamp(16px,1em,32px); }
+#pane-files .file-icon svg,#root-icon .file-icon svg { width:100%; height:100%; }
+#pane-files .chevron { width:clamp(12px,.7em,20px); flex-basis:clamp(12px,.7em,20px); }
+#pane-files .chevron .ui-icon { width:100%; height:auto; flex-basis:auto; }
+#pane-outline .outline-symbol { font-size:.75em; }
+#tree-filter { font-size:var(--files-size); line-height:1.4; height:auto; min-height:calc(var(--files-size) * 1.4 + 10px); padding-left:calc(clamp(13px,calc(var(--files-size) * .8),24px) + 16px); }
+#filter-wrap>.ui-icon { width:clamp(13px,calc(var(--files-size) * .8),24px); height:clamp(13px,calc(var(--files-size) * .8),24px); }
 </style></head><body>
 
 <div id="hot"></div>
@@ -656,7 +670,7 @@ let state = { activeTab:1, settings:{}, defaults:{}, themes:[], fonts:[], path:"
 // scroll position - is not a setting and is deliberately not listed.
 const GROUPS = {
   Appearance: ["theme", "text_contrast", "tab_shape", "tab_highlight", "chrome", "zoom"],
-  Fonts: ["ui_font", "body_font", "code_font", "ui_size", "body_size",
+  Fonts: ["ui_font", "body_font", "code_font", "ui_size", "files_size", "body_size",
           "code_size", "line_height", "ligatures"],
   Workspace: ["sidebar", "sidebar_width", "sidebar_tab", "show_hidden", "restore_last_file", "restore_tabs", "close_to_tray", "log_retention_days", "backup_retention"],
   Editor: ["word_wrap", "tab_size", "minimap", "status_bar"],
@@ -691,6 +705,7 @@ const LABELS = {
  close_to_tray:["Close to system tray","Keep the note open in the Windows tray. Use Quit to exit."],
  word_wrap:["Word wrap","Wrap long lines in the editor."], tab_size:["Tab width","Spaces inserted by Tab, from 1 to 8."],
  ui_font:["Interface font","Toolbar, file browser and options."], body_font:["Reading font","Rendered Markdown paragraphs and headings."], code_font:["Code font","Editor and code blocks; monospace fonts."],
+ files_size:["Files size","File names, folders, and outline headings in pixels (12–48)."],
  ui_size:["Interface size","Pixels."], body_size:["Reading size","Pixels before zoom."], code_size:["Code size","Pixels before zoom."],
  line_height:["Line spacing","Line height as a multiple of the font size."], ligatures:["Font ligatures","Allow the font to join character combinations."],
  zoom:["Document zoom","Ctrl+wheel or Ctrl+Plus/Minus. Ctrl+0 resets."], view_mode:["Reading mode","Rendered Markdown or syntax-colored source."],
@@ -698,7 +713,7 @@ const LABELS = {
  highlight_limit_kb:["Highlight limit","Skip syntax highlighting above this size in KB."],
  plain_text_above_mb:["Large-file preview threshold","Above this size in MB, open a read-only preview of the first 256 KB. Maximum editable file size is 32 MB."]
 };
-const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], ui_size:[10,28,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
+const RANGES = { log_retention_days:[1,365,1], backup_retention:[1,20,1], text_contrast:[0,100,5], ui_size:[10,28,1], files_size:[12,48,1], body_size:[10,48,1], code_size:[10,40,1], line_height:[1,2.5,.05], zoom:[.5,3,.1], sidebar_width:[180,640,10], tab_size:[1,8,1], highlight_limit_kb:[1,4096,1], plain_text_above_mb:[1,32,1] };
 const choiceLabel = x => ({rounded:"Rounded",square:"Square",soft:"Soft tint",line:"Underline",glow:"Soft glow",always:"Always visible",auto:"Reveal at edge",off:"Hidden",source:"Source text",rendered:"Rendered Markdown",files:"Files",outline:"Outline",recent:"Recent"}[x] || x);
 let activeGroup = "Appearance";
 
@@ -737,6 +752,7 @@ const app = {
     r.setProperty("--ui-font", s.ui_font); r.setProperty("--body-font", s.body_font);
     r.setProperty("--code-font", s.code_font);
     r.setProperty("--ui-size", s.ui_size + "px");
+    r.setProperty("--files-size", (s.files_size || 16) + "px");
     r.setProperty("--body-size", s.body_size + "px");
     r.setProperty("--code-size", s.code_size + "px");
     r.setProperty("--line", s.line_height);
