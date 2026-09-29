@@ -436,7 +436,7 @@ body.resizing-sidebar #side { transition:none; }
   <div id="drag-region" title="Drag to move · Double-click to maximize"><span id="single-title"></span></div>
   <div id="document-actions">
     <button id="b-find" class="icon-only quiet-control" aria-label="Show or hide Find" aria-pressed="false" aria-controls="find" title="Find (Ctrl+F)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
-    <button id="b-outline" class="icon-only quiet-control" aria-label="Show or hide Outline" aria-controls="pane-outline" aria-pressed="false" title="Show or hide document outline"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h12M8 12h12M8 19h12M3 5h1M3 12h1M3 19h1"/></svg></button>
+    <button id="b-outline" class="icon-only quiet-control" aria-label="Show document outline" aria-controls="side" aria-pressed="false" title="Show document outline (Outline → hidden → Files)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h12M8 12h12M8 19h12M3 5h1M3 12h1M3 19h1"/></svg></button>
         <button id="b-view" class="quiet-control" title="Rendered or source text (Ctrl+U)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></svg><span class="button-label">Source</span></button>
         <button id="b-edit" class="quiet-control" title="Edit the source (Ctrl+E)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/></svg><span class="button-label">Edit</span></button>
       </div>
@@ -758,7 +758,9 @@ const app = {
     $("b-side").title = (filesDocked ? "Hide" : "Show") + " the file tree (Ctrl+B)";
     const outlineDocked = s.sidebar === "always" && s.sidebar_tab === "outline";
     $("b-outline").setAttribute("aria-pressed", String(outlineDocked));
-    $("b-outline").title = (outlineDocked ? "Hide" : "Show") + " document outline";
+    const nextSidebarAction = s.sidebar === "off" ? "Show file tree" : s.sidebar_tab === "outline" ? "Hide sidebar" : "Show document outline";
+    $("b-outline").title = nextSidebarAction + " (Outline → hidden → Files)";
+    $("b-outline").setAttribute("aria-label", nextSidebarAction);
     $("sidebar-title").textContent = s.sidebar_tab === "outline" ? "Outline" : "Files";
     for (const id of ["folder-new","folder-open","folder-refresh"]) $(id).hidden = s.sidebar_tab !== "files";
     app.setThemeControl();
@@ -1152,11 +1154,7 @@ $("b-side").onclick = () => {
   if (!hide) send({ cmd:"setting", key:"sidebar_tab", value:"files" });
   send({ cmd:"setting", key:"sidebar", value:hide ? "off" : "always" });
 };
-$("b-outline").onclick = () => {
-  const hide = state.settings.sidebar === "always" && state.settings.sidebar_tab === "outline";
-  if (!hide) send({ cmd:"setting", key:"sidebar_tab", value:"outline" });
-  send({ cmd:"setting", key:"sidebar", value:hide ? "off" : "always" });
-};
+$("b-outline").onclick = () => send({ cmd:"cycleSidebar" });
 $("sidepin").onclick = () => send({ cmd:"setting", key:"sidebar",
   value: state.settings.sidebar === "always" ? "auto" : "always" });
 $("sidehot").onmouseenter = () => $("side").classList.add("show");

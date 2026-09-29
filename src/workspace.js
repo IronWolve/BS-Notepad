@@ -328,7 +328,7 @@ app.chooseTheme=(anchor=$('b-theme'))=>openChoices(anchor,state.themes.map(t=>({
 const HELP = [
  {id:'start',title:'Getting started',paragraphs:[
   'Choose a folder in Files to browse your workspace. Select a file to read it; use Edit when you want to change its text.',
-  'Files and the theme arrow sit beside the main menu. Find, Outline, Source, Edit and the document-map toggle sit on the right. The quiet controls brighten on hover or keyboard focus. Files shows or hides the file browser. Outline shows document headings in the sidebar. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
+  'Files and the theme arrow sit beside the main menu. Find, Outline, Source, Edit and the document-map toggle sit on the right. The quiet controls brighten on hover or keyboard focus. Files shows or hides the file browser. Repeated clicks on Outline cycle through document headings, a hidden sidebar, and the file tree. Drag its divider to give the file list more room. Your workspace, theme and sizes are remembered.'
  ]},
  {id:'tabs',title:'Files & tabs',paragraphs:[
   'Right-click a file and choose Open in new tab, or middle-click it. An already-open file switches to its existing tab. New notes and files chosen from the Open dialog also get their own tabs.',

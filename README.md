@@ -13,7 +13,7 @@ Read a document, switch to its source, and edit it in the same window. BS Notepa
 ## What it does
 
 - **Read and write.** Rendered Markdown, syntax-colored source, an editor, and a reading column that adapts to wide tables and code.
-- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. A toolbar Outline button shows document headings. Right-click or middle-click a file to open it in a tab.
+- **Keep a workspace.** A file tree with file-type icons, folder expansion and filtering. The Outline toolbar button cycles through document headings, a hidden sidebar, and the file tree. Right-click or middle-click a file to open it in a tab.
 - **Pick your colors.** Bold, soft, and classic themes, including black. Preview on hover, click to save, and keep favorites. Adjust text contrast, choose rounded or square tabs with a quiet active-tab accent, and set separate interface, reading, and code fonts.
 - **Find your place.** Toggle Find, match case or whole words, replace text, jump to a line, and navigate with the optional document map.
 - **Look closer.** Images open inside the workspace with fit, actual size, zoom, pan, and a magnifying lens. Click a picture in Markdown to inspect it, then return to your reading position.

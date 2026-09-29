@@ -160,6 +160,19 @@ impl Settings {
         settings
     }
 
+    /// Cycle one toolbar control through outline, hidden sidebar, and files.
+    pub fn cycle_sidebar(&mut self) {
+        if self.sidebar == "off" {
+            self.sidebar_tab = "files".into();
+            self.sidebar = "always".into();
+        } else if self.sidebar_tab == "outline" {
+            self.sidebar = "off".into();
+        } else {
+            self.sidebar_tab = "outline".into();
+            self.sidebar = "always".into();
+        }
+    }
+
     pub fn normalize(&mut self) {
         self.window_width = self.window_width.clamp(620, 7680);
         self.window_height = self.window_height.clamp(400, 4320);

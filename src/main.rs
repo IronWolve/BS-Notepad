@@ -1059,6 +1059,11 @@ impl App {
                     }
                 }
             }
+            "cycleSidebar" => {
+                self.settings.cycle_sidebar();
+                self.send_settings();
+                self.persist_settings();
+            }
             "refreshTree" => self.send_tree(self.tree_dir.clone()),
             "openPath" => {
                 if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
