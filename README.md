@@ -37,7 +37,7 @@ Open a file with **Ctrl+O**, or choose a folder with **Ctrl+Shift+O**. Dragging 
 
 The main menu is at the upper left. Files and the theme picker sit beside it. Find, Outline, Source, Edit, and the document map are on the right. Controls brighten when hovered or focused. A single open document shows its name in the top bar; opening another reveals tabs.
 
-[Download the latest release](https://github.com/IronWolve/BS-Notepad/releases/latest) for Windows, macOS, or Linux. ZIP packages include checksums, the project copyright notice, and third-party notices. Compiled applications are distributed separately from this source repository. The public checkout keeps application source in `src/`, pictures in `pics/`, and copyright notices in `licenses/`, with this README at the repository root; local build manifests, build scripts, tools, and tests are not included, so it is not a standalone buildable checkout.
+**Release downloads are temporarily withdrawn. No binaries are currently published on GitHub.** Distribution ZIPs include checksums, the project copyright notice, and third-party notices. Compiled applications are distributed separately from this source repository. The public checkout keeps application source in `src/`, pictures in `pics/`, and copyright notices in `licenses/`, with this README at the repository root; local build manifests, build scripts, tools, and tests are not included, so it is not a standalone buildable checkout.
 
 | Platform | Running a built package |
 | --- | --- |
@@ -86,4 +86,4 @@ Maintained by [IronWolve](https://github.com/IronWolve). When reporting a bug, i
 
 Copyright © 2026 IronWolve. All rights reserved. No license is currently granted for the original project code. Third-party components remain subject to their respective licenses.
 
-See [COPYRIGHT](licenses/COPYRIGHT) for the project notice and [third-party notices](licenses/THIRD-PARTY-NOTICES.txt) for dependency and bundled-asset licenses. The unmodified MPL-2.0 component's source and license are included in the [release ZIPs](https://github.com/IronWolve/BS-Notepad/releases/latest), alongside the other required third-party license materials. These third-party permissions are not restricted by the project's copyright notice.
+See [COPYRIGHT](licenses/COPYRIGHT) for the project notice and [third-party notices](licenses/THIRD-PARTY-NOTICES.txt) for dependency and bundled-asset licenses. The unmodified MPL-2.0 component's [source and license](https://github.com/IronWolve/BS-Notepad/tree/v0.7.4/third-party/option-ext-0.2.0) remain available in the retained source tag and are included in distribution ZIPs, alongside the other required third-party license materials. These third-party permissions are not restricted by the project's copyright notice.
